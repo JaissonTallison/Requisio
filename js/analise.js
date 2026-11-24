@@ -285,6 +285,9 @@
     respostas.filter((r) => r.id.startsWith('x_') && r.classe === 'informativa')
       .forEach((r) => frases(r.texto).forEach((f) => addFato(f, r.fonte, r.pendente, null, r.etapaId === 'prb')));
 
+    /* Descrições de fotos e documentos anexados também são informação do cliente. */
+    (E.anexos || []).filter((x) => t(x.descricao)).forEach((x) => addFato('Anexo “' + t(x.nome) + '”: ' + t(x.descricao), 'Anexo › ' + t(x.nome), false, null, false));
+
     E.departamentos.filter((d) => t(d.nome)).forEach((dd) => {
       const d = porChave[slug(CATALOGO.find((k) => k.nomeRe.test(norm(dd.nome))) ? CATALOGO.find((k) => k.nomeRe.test(norm(dd.nome))).nome : dd.nome)];
       if (!d) return;
@@ -336,6 +339,7 @@
     E.processos.forEach((p) => ['etapas', 'ferramentas', 'problemas'].forEach((k) => {
       if (t(p[k])) evidencias.push({ texto: t(p[k]), fonte: 'Processos › ' + (t(p.nome) || 'sem nome'), depNome: t(p.departamento), atual: true });
     }));
+    (E.anexos || []).filter((x) => t(x.descricao)).forEach((x) => evidencias.push({ texto: t(x.descricao), fonte: 'Anexo › ' + t(x.nome), atual: true }));
     ['req_funcionais', 'sol_preferencia', 'sol_ideal'].forEach((id) => { const r = info(id); if (r) evidencias.push({ texto: r.texto, fonte: r.fonte, atual: false }); });
     // "Quais controles são feitos em planilhas…?" — as áreas citadas usam planilha mesmo sem a palavra na resposta
     const rPlan = info('sis_planilhas');

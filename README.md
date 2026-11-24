@@ -11,11 +11,25 @@ Ferramenta de levantamento de requisitos e mapeamento de processos para usar em 
 
 ## Entrevista
 
-- **Salvamento automático:** cada alteração é gravada no LocalStorage do navegador, cerca de 0,3 s depois da digitação e também ao fechar ou atualizar a página. A etapa aberta também é restaurada.
+- **Salvamento automático:** cada alteração é gravada no aparelho cerca de 0,15 s depois da digitação, ao sair de um campo, ao trocar de etapa e ao fechar, minimizar ou atualizar a página. A etapa aberta também é restaurada.
+- **Voltar sem perder nada:** os botões Anterior e Próxima, o gesto de voltar do celular e o botão Voltar do navegador trocam de etapa dentro do Requisio; nada do que foi preenchido é apagado.
+- **Fotos e documentos:** cada etapa tem **Tirar foto** (abre a câmera no celular e no tablet) e **Anexar arquivo** (planilhas, PDFs, imagens, documentos), com descrição. Fotos grandes são reduzidas para até 1600 px. Limite de 30 MB por arquivo. As descrições entram na análise, e os anexos aparecem no anexo técnico do relatório.
 - **Progresso:** o menu lateral mostra respostas preenchidas por etapa e o total da entrevista. Dá para voltar a qualquer etapa.
 - **Pendente: confirmar depois:** marque só as respostas que ainda precisam ser confirmadas com o cliente. Elas aparecem como “Pendente de confirmação” no relatório. Respostas sem marcação são tratadas como informadas pelo cliente.
 - **Departamentos e processos:** o nome do departamento é livre, com sugestões (Financeiro, RH, Compras, Administrativo, Comercial, Operacional e outros). Cada processo tem departamento responsável e outros departamentos envolvidos, o que identifica processos entre áreas.
 - **Voz:** o botão **Gravar** de cada resposta usa o reconhecimento de voz nativo do navegador (Web Speech API, em pt-BR). Na primeira gravação, o Requisio pede a confirmação de que o entrevistado autorizou. O texto transcrito entra no campo e pode ser editado. Se o navegador não oferecer o recurso, o aviso aparece na etapa e o botão fica desativado.
+
+## Onde os dados ficam e como são protegidos
+
+- **Levantamentos salvos:** o botão **Levantamentos** lista todos os levantamentos guardados no aparelho, com relatório e anexos, para abrir, exportar ou excluir. **Novo levantamento** não apaga o anterior; excluir só acontece pela lista, com confirmação.
+- **Três cópias no aparelho:**
+  - **LocalStorage:** cópia rápida do levantamento aberto.
+  - **IndexedDB:** todos os levantamentos e arquivos, com gravação confirmada no disco, o que protege contra bateria descarregada ou aparelho travado.
+  - **Versão anterior:** guardada a cada minuto.
+  Ao abrir, o Requisio usa a cópia válida mais recente e avisa quando houve recuperação.
+- **Abas e aparelho em segundo plano:** abas abertas ao mesmo tempo se mantêm sincronizadas. Uma aba antiga reaberta carrega os dados mais recentes antes de gravar, e a versão dela fica guardada à parte.
+- **Sem internet:** publicado em `https`, o Requisio funciona offline depois da primeira visita (service worker em `sw.js`). O preenchimento continua salvo no aparelho; só a gravação por voz precisa de internet. Quando há conexão, a versão mais nova do sistema é sempre carregada.
+- **Persistência:** o Requisio pede ao navegador que não apague os dados quando faltar espaço (quando o navegador permite).
 
 ## Motor de análise (`js/analise.js`)
 
@@ -52,14 +66,15 @@ As respostas originais ficam no **anexo técnico**, sem repetir o questionário 
 
 **Diagramas:** usam Mermaid e podem ser editados em “Editar código do diagrama”. A biblioteca (`lib/mermaid/mermaid.min.js`, versão 11.12.3, licença MIT) fica no projeto para funcionar sem internet e só é carregada ao abrir o relatório.
 
-**Exportar e importar JSON:** guarda ou transfere o levantamento completo, inclusive o relatório editado e as decisões. Importar substitui o levantamento aberto (pede confirmação). Arquivos do formato anterior continuam abrindo e podem ser gerados de novo no formato atual.
+**Exportar e importar JSON:** guarda ou transfere o levantamento completo, inclusive o relatório editado, as decisões e os arquivos anexados. Importar acrescenta o levantamento à lista sem apagar os outros; se ele já existir, dá para substituir o salvo ou importar como cópia. Arquivos do formato anterior continuam abrindo e podem ser gerados de novo no formato atual.
 
 ## Arquivos
 
 ```
 index.html               estrutura da página
+sw.js                    funcionamento sem internet (service worker)
 css/estilos.css          visual, responsivo e impressão
-js/armazenamento.js      estado, validação dos dados e LocalStorage
+js/armazenamento.js      estado, validação dos dados, LocalStorage, IndexedDB e arquivos
 js/etapas.js             etapas, perguntas e campos
 js/voz.js                gravação e transcrição
 js/analise.js            motor de análise
@@ -73,8 +88,8 @@ lib/mermaid/             biblioteca de diagramas (MIT)
 
 - **A análise é por regras, não por inteligência artificial.** Ela reconhece os padrões cadastrados (pagamentos manuais, planilhas, mensagens, informação descentralizada, fluxo de caixa, contratação), negações, respostas vagas e volumes. Problemas fora desses padrões aparecem como fatos informados pelo cliente, sem solução proposta, e precisam ser tratados manualmente.
 - **Voz depende do navegador.** Chrome e Edge enviam o áudio ao serviço de reconhecimento do fornecedor, então é preciso internet. O Firefox não oferece o recurso. No Safari, o funcionamento varia por versão.
-- **Dados ficam só neste navegador e neste computador.** Limpar os dados de navegação apaga o levantamento. Exporte o JSON ao final de cada visita.
-- **Um levantamento por vez.** Para atender outro cliente, exporte o atual e use “Novo levantamento”. Uma cópia de segurança do levantamento anterior fica guardada no navegador (`requisio.backup`) até a próxima troca.
-- **Duas abas abertas ao mesmo tempo** gravam por cima uma da outra. Use uma aba só.
+- **Os dados ficam no aparelho e no navegador em que foram preenchidos.** Não há sincronização entre celular, tablet e computador (isso exigiria servidor). Para levar um levantamento de um aparelho para outro, use Exportar e Importar JSON.
+- **Limpar os dados de navegação apaga os levantamentos.** No Safari (iPhone e iPad), o próprio navegador pode apagar dados de sites não visitados há mais de 7 dias; adicionar o Requisio à Tela de Início evita isso. Exporte o JSON ao final de cada visita como cópia externa.
+- **Arquivos anexados aumentam o JSON exportado** (vão embutidos no arquivo).
 - **Gerar novamente o relatório** substitui as edições feitas nele (o sistema avisa antes).
 - **Diagramas grandes** podem ocupar uma página inteira no PDF.
