@@ -12,6 +12,7 @@ Ferramenta de levantamento de requisitos e mapeamento de processos para usar em 
 ## Entrevista
 
 - **Salvamento automático:** cada alteração é gravada no aparelho cerca de 0,15 s depois da digitação, ao sair de um campo, ao trocar de etapa e ao fechar, minimizar ou atualizar a página. A etapa aberta também é restaurada.
+- **Exemplos de resposta:** abaixo de cada pergunta, em cinza claro, há exemplos para o entrevistador orientar quem não sabe responder. Tocar num exemplo insere o texto no campo, onde pode ser editado; nada é preenchido sem esse toque.
 - **Voltar sem perder nada:** os botões Anterior e Próxima, o gesto de voltar do celular e o botão Voltar do navegador trocam de etapa dentro do Requisio; nada do que foi preenchido é apagado.
 - **Fotos e documentos:** cada etapa tem **Tirar foto** (abre a câmera no celular e no tablet) e **Anexar arquivo** (planilhas, PDFs, imagens, documentos), com descrição. Fotos grandes são reduzidas para até 1600 px. Limite de 30 MB por arquivo. As descrições entram na análise, e os anexos aparecem no anexo técnico do relatório.
 - **Progresso:** o menu lateral mostra respostas preenchidas por etapa e o total da entrevista. Dá para voltar a qualquer etapa.
