@@ -111,6 +111,12 @@
         G('Problemas não associados a um departamento', A.geral.problemas.map((f) => it(f.texto, f.pendente ? 'pendente' : 'cliente', f.fonte)))
       ].filter((g) => g.itens.length)
     };
+    /* Respostas dos módulos, indicadores, tentativas e condições do cliente: entram inteiras no diagnóstico. */
+    const porModulo = R.MODULOS.map((m) => G(m.titulo, Object.keys(R.PERGUNTAS).filter((id) => R.PERGUNTAS[id].modulo === m.id).flatMap((id) => doQ(id, true))));
+    geralSec.grupos.push(...porModulo.concat([
+      G('Indicadores e tentativas anteriores', ['pro_indicadores', 'prb_tentativas'].flatMap((id) => doQ(id, true))),
+      G('Expectativas e condições do cliente', ['sol_ideal', 'sol_expectativa', 'sol_preferencia', 'sol_prioridades', 'sol_prazo', 'sol_orcamento', 'sol_restricoes'].flatMap((id) => doQ(id, true)))
+    ]).filter((g) => g.itens.length));
     const papelTxt = (v) => ((R.PAPEIS_EMPRESA || []).find((x) => x[0] === v) || ['', 'papel não definido'])[1];
     if (A.grupo.length >= 2) {
       const itensGrupo = A.grupo.map((x) => it([t(x.nome) + ' — ' + papelTxt(x.papel), t(x.areas) ? 'Áreas: ' + t(x.areas) : '', t(x.cnpj) ? 'CNPJ: ' + t(x.cnpj) : '', t(x.obs)].filter(Boolean).join('\n'),
@@ -130,6 +136,12 @@
     }
 
     /* ================= 3. Diagnóstico por departamento ================= */
+    /* Processo completo: passo a passo e demais campos informados. */
+    function itemProcesso(p) {
+      const det = R.CAMPOS_PROCESSO.filter((f) => !['departamento', 'etapas'].includes(f.campo) && t(p.dados[f.campo])).map((f) => f.rotulo + ': ' + t(p.dados[f.campo]));
+      const pend = !p.etapas.length || R.CAMPOS_PROCESSO.some((f) => p.dados[f.campo + '__confirmar']);
+      return it(p.nome + (p.etapas.length ? ':\n' + p.etapas.map((e, i) => (i + 1) + '. ' + e).join('\n') : ': passo a passo não informado.') + (det.length ? '\n' + det.join('\n') : ''), pend ? 'pendente' : 'cliente', 'Processos › ' + p.nome);
+    }
     const depSec = { id: 'departamentos', titulo: 'Diagnóstico por departamento', nota: 'Cada departamento reúne o que foi informado sobre ele. Frases associadas pelo assunto (sem citar o departamento) indicam isso na fonte.', grupos: [] };
     A.deps.forEach((d) => {
       const temConteudo = d.fatos.length || d.problemas.length || d.processos.length || Object.keys(d.padroes).length || d.requisitos.length || d.responsaveis.length;
@@ -138,7 +150,8 @@
       const situacao = d.fatos.filter((f) => !d.problemas.includes(f)).map((f) => it(f.texto, f.pendente ? 'pendente' : 'cliente', f.fonte + (f.modo === 'tema' ? ' (associado pelo assunto)' : '')));
       depSec.grupos.push(G('Situação atual', situacao.length ? situacao : [it('Situação atual da área não descrita na entrevista.', 'pendente', '')], { nivel: 4 }));
       depSec.grupos.push(G('Responsáveis', d.responsaveis.length ? d.responsaveis.map((r) => it(r.texto, r.pendente ? 'pendente' : 'cliente', 'Cadastro')) : [it('Responsável pela área não informado.', 'pendente', '')], { nivel: 4 }));
-      const procItens = d.processos.map((p) => it(p.nome + (p.etapas.length ? ':\n' + p.etapas.map((e, i) => (i + 1) + '. ' + e).join('\n') : ': passo a passo não informado.'), p.etapas.length ? 'cliente' : 'pendente', 'Processos › ' + p.nome));
+      const procItens = d.processos.map((p) => (p.dono && p.dono !== d
+        ? it(p.nome + ': participa; detalhado em ' + p.dono.nome + '.', 'cliente', 'Processos › ' + p.nome) : itemProcesso(p)));
       depSec.grupos.push(G('Processos atuais (AS-IS)', procItens.length ? procItens : [it('Nenhum processo da área mapeado passo a passo.', 'pendente', '')], { nivel: 4 }));
       const probItens = d.problemas.map((f) => it(f.texto, f.pendente ? 'pendente' : 'cliente', f.fonte + (f.modo === 'tema' ? ' (associado pelo assunto)' : '')));
       Object.values(d.padroes).forEach((p) => {
@@ -164,6 +177,8 @@
       });
     });
     depAtual = null;
+    const semDono = A.processos.filter((p) => !p.dono);
+    if (semDono.length) procSec.grupos.push(cab('Processos sem departamento definido'), G('Como funciona hoje (AS-IS)', semDono.map(itemProcesso), { nivel: 4 }));
     if (interItens.length) procSec.grupos.push(cab('Entre departamentos'), G('Dependências entre áreas', interItens.map((x) => Object.assign({}, x, { id: R.uid() })), { nivel: 4 }));
     if (!procSec.grupos.length) procSec.grupos.push(G('', [it('Nenhum processo com informação suficiente para AS-IS e TO-BE.', 'pendente', '')]));
 

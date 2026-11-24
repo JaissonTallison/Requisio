@@ -400,7 +400,7 @@
 
   /* Conferência antes de sair da visita: o que ainda falta para não deixar lacunas. */
   function lacunas() {
-    const L = { essenciais: [], vagas: [], marcadas: [], departamentos: [], empresas: [], divergencias: [] };
+    const L = { essenciais: [], vagas: [], marcadas: [], departamentos: [], empresas: [], divergencias: [], esclarecer: [] };
     const cls = R.analise.classificar;
     R.ETAPAS.filter((e) => e.perguntas).forEach((e) => e.perguntas.filter((p) => R.perguntaVisivel(p, estado)).forEach((p) => {
       const r = estado.respostas[p.id] || {};
@@ -418,7 +418,7 @@
       if (!temTexto(d.atividades)) falta.push('atividades');
       if (estado.modulos.grupo && !d.onde) falta.push('onde funciona no grupo');
       const n = R.analise.norm(nome);
-      if (!estado.processos.some((p) => temTexto(p.etapas) && R.analise.norm(p.departamento || '').includes(n))) falta.push('processo com passo a passo');
+      if (!estado.processos.some((p) => temTexto(p.etapas) && R.analise.norm((p.departamento || '') + ' ' + (p.envolvidos || '')).includes(n))) falta.push('processo com passo a passo');
       if (falta.length) L.departamentos.push({ etapa: d.onde || !estado.modulos.grupo ? (falta.includes('processo com passo a passo') && falta.length === 1 ? 'pro' : 'dep') : 'dep', alvo: 'blk_' + d.id, texto: nome + ': falta ' + falta.join(', ') });
     });
     if (estado.modulos.grupo) {
@@ -434,7 +434,19 @@
         if (falta.length) L.empresas.push({ etapa: 'cadastro', alvo: 'g_' + x.id + '_papel', texto: x.nome.trim() + ': ' + falta.join(', ') });
       });
     }
-    try { const A2 = R.analise.analisar(estado); if (A2.divergencia) L.divergencias.push({ etapa: '', alvo: '', texto: 'Volumes diferentes: ' + A2.divergencia.map((v) => '“' + v.trecho + '”').join(' e ') }); } catch (e) { /* análise indisponível */ }
+    const total = estado.cadastro.grupo.filter((x) => temTexto(x.nome)).length;
+    if (estado.modulos.grupo && total >= 2) {
+      R.ETAPAS.filter((e) => e.perguntas).forEach((e) => e.perguntas.forEach((p) => {
+        const m = /grupo (?:de|com) (\d+) empresas/.exec(R.analise.norm((estado.respostas[p.id] || {}).texto || ''));
+        if (m && Number(m[1]) !== total) L.divergencias.push({ etapa: e.id, alvo: 'r_' + p.id, texto: (p.curto || p.q) + ' cita ' + m[1] + ' empresas, mas o cadastro tem ' + total });
+      }));
+    }
+    try {
+      const A2 = R.analise.analisar(estado);
+      if (A2.divergencia) L.divergencias.push({ etapa: '', alvo: '', texto: 'Volumes de pagamento diferentes: ' + A2.divergencia.map((v) => '“' + v.trecho + '”').join(' e ') });
+      const pads = A2.deps.flatMap((d) => Object.values(d.padroes)).concat(Object.values(A2.padroesGerais));
+      L.esclarecer = [...new Set(pads.flatMap((x) => x.def.perguntas))];
+    } catch (e) { /* análise indisponível */ }
     return L;
   }
 
@@ -450,12 +462,13 @@
     ].filter((g) => g[1].length);
     const total = grupos.reduce((s2, g) => s2 + g[1].length, 0);
     let h = '<section class="painel conferencia nao-imprimir"><h2 class="painel-tit">Conferência antes de sair da visita</h2>';
-    if (!total) return h + '<p class="conf-ok">Nenhuma lacuna encontrada.</p></section>';
+    const roteiro = L.esclarecer.length ? '<details class="conf-grupo"><summary>Perguntas para aprofundar com o cliente <span class="painel-cont">' + L.esclarecer.length + '</span></summary><ul>' + L.esclarecer.map((q) => '<li><span>' + esc(q) + '</span></li>').join('') + '</ul></details>' : '';
+    if (!total) return h + '<p class="conf-ok">Nenhum campo essencial pendente. Confira também as perguntas para aprofundar.</p>' + roteiro + '</section>';
     h += '<p class="conf-resumo">' + total + (total === 1 ? ' item ainda precisa' : ' itens ainda precisam') + ' de resposta ou confirmação.</p>';
     h += grupos.map(([tit, itens]) => '<details class="conf-grupo"' + (tit.startsWith('Marcadas') ? '' : ' open') + '><summary>' + tit + ' <span class="painel-cont">' + itens.length + '</span></summary><ul>' +
       itens.map((x) => '<li><span>' + esc(x.texto) + '</span>' + (x.etapa ? '<button type="button" class="btn-link" data-acao="ir-pergunta" data-etapa="' + x.etapa + '" data-alvo="' + x.alvo + '">Ir</button>' : '') + '</li>').join('') +
       '</ul></details>').join('');
-    return h + '</section>';
+    return h + roteiro + '</section>';
   }
 
   function renderCadastro() {
