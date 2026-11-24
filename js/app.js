@@ -269,11 +269,20 @@
     return '<button type="button" class="btn-voz' + (ativo ? ' gravando' : '') + '" data-acao="voz" data-alvo="' + id + '" aria-pressed="' + ativo + '">' + ICONE_MIC + '<span>' + (ativo ? 'Parar' : 'Gravar') + '</span></button>';
   }
 
+  /* Exemplos de resposta, discretos: ajudam o entrevistador a orientar o entrevistado. Tocar insere no campo. */
+  function linhaExemplos(id, exemplos) {
+    if (!exemplos || !exemplos.length) return '';
+    return '<p class="exemplos nao-imprimir"><span class="exemplos-rot">Exemplos:</span> ' + exemplos.map((x) =>
+      '<a href="#" role="button" class="exemplo" data-acao="exemplo" data-alvo="' + id + '" data-texto="' + esc(x) + '" title="Inserir no campo">' + esc(x.replace(/\n/g, ' ')) + '</a>'
+    ).join('<span class="exemplos-sep" aria-hidden="true"> · </span>') + '</p>';
+  }
+
   /* Campo de resposta com gravação de voz e marcação de pendência. */
   function campo(o) {
     const rotulo = o.rotuloHtml || '<label class="pergunta-txt" for="' + o.id + '">' + esc(o.rotulo) + '</label>';
     return '<div class="pergunta">' + rotulo +
       (o.ajuda ? '<p class="pergunta-ajuda">' + esc(o.ajuda) + '</p>' : '') +
+      linhaExemplos(o.id, o.exemplos) +
       '<textarea id="' + o.id + '" class="resposta" rows="' + (o.linhas || 3) + '" data-path="' + o.path + '">' + esc(o.valor) + '</textarea>' +
       '<div class="pergunta-acoes">' + botaoVoz(o.id) +
       '<span class="voz-status" id="vs_' + o.id + '" aria-live="polite"></span>' +
@@ -288,7 +297,7 @@
     if (et.lista) h += '<h2 class="painel-tit">Perguntas gerais</h2>';
     h += et.perguntas.map((p) => {
       const r = estado.respostas[p.id] || {};
-      return campo({ id: 'r_' + p.id, rotulo: p.q, ajuda: p.ajuda, path: 'respostas.' + p.id + '.texto', valor: r.texto, pathConf: 'respostas.' + p.id + '.confirmar', conf: r.confirmar });
+      return campo({ id: 'r_' + p.id, rotulo: p.q, ajuda: p.ajuda, exemplos: p.ex, path: 'respostas.' + p.id + '.texto', valor: r.texto, pathConf: 'respostas.' + p.id + '.confirmar', conf: r.confirmar });
     }).join('');
     h += renderExtras(et) + '</section>';
     h += renderAnexos(et.id);
@@ -313,7 +322,7 @@
         if (f.linha) {
           return '<div class="campo campo-linha"><label for="' + id + '">' + esc(f.rotulo) + '</label><input id="' + id + '" type="text" data-path="' + base + '.' + f.campo + '" value="' + esc(x[f.campo]) + '"' + (f.lista ? ' list="' + f.lista + '"' : '') + '></div>';
         }
-        return campo({ id, rotulo: f.rotulo, path: base + '.' + f.campo, valor: x[f.campo], pathConf: base + '.' + f.campo + '__confirmar', conf: x[f.campo + '__confirmar'], linhas: 2 });
+        return campo({ id, rotulo: f.rotulo, exemplos: f.ex, path: base + '.' + f.campo, valor: x[f.campo], pathConf: base + '.' + f.campo + '__confirmar', conf: x[f.campo + '__confirmar'], linhas: 2 });
       });
       const linhas = corpo.filter((c) => c.startsWith('<div class="campo campo-linha"'));
       const textos = corpo.filter((c) => !c.startsWith('<div class="campo campo-linha"'));
@@ -677,6 +686,17 @@
       window.scrollTo(0, y);
     },
     voz: (b) => acaoVoz(b),
+    exemplo: (b) => {
+      const el = document.getElementById(b.dataset.alvo);
+      if (!el) return;
+      const texto = b.dataset.texto;
+      if (!el.value.includes(texto)) {
+        el.value = el.value.trim() ? el.value.replace(/\s+$/, '') + '\n' + texto : texto;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    },
     finalizar: () => {
       salvarPendencias();
       if (!estado.diagnostico) { gerarDiagnostico(); return; }
