@@ -25,8 +25,9 @@
     try { const d = document.createElement('div'); d.contentEditable = 'plaintext-only'; return d.contentEditable === 'plaintext-only' ? 'plaintext-only' : 'true'; } catch (e) { return 'true'; }
   })();
 
-  const ORIGENS = { cliente: 'Informado pelo cliente', sugestao: 'Sugestão do sistema', pendente: 'Pendente de confirmação' };
-  const STATUS = { a_validar: 'A validar', validado: 'Validado', descartado: 'Descartado' };
+  const ORIGENS = { cliente: 'Informado pelo cliente', pendente: 'Pendente de confirmação', inferencia: 'Inferência do sistema', recomendacao: 'Recomendação técnica' };
+  const STATUS = { a_validar: 'A validar', aprovado: 'Aprovado', rejeitado: 'Rejeitado' };
+  const VALIDACAO = { pendente: 'Pendente de decisão', aprovado: 'Aprovada', alteracoes: 'Alterações solicitadas', rejeitado: 'Rejeitada' };
 
   /* ================= Salvamento automático ================= */
   let timerSalvar = null;
@@ -86,7 +87,7 @@
   }
 
   function marcarRespostaAlterada(caminho) {
-    if (!caminho.startsWith('diagnostico')) estado.meta.respostasAlteradasEm = new Date().toISOString();
+    if (!caminho.startsWith('diagnostico') && !caminho.startsWith('validacao')) estado.meta.respostasAlteradasEm = new Date().toISOString();
   }
 
   /* ================= Progresso ================= */
@@ -174,6 +175,7 @@
     else corpo = renderPerguntas(et);
     principal.innerHTML = cabecalho(et) + corpo + rodape(et);
     principal.querySelectorAll('textarea.resposta').forEach(ajustarAltura);
+    if (et.tipo === 'diagnostico') R.diagramas.desenhar(principal);
   }
 
   function cabecalho(et) {
@@ -199,7 +201,7 @@
     const idx = R.ETAPAS.indexOf(et);
     const ant = idx > 0 ? '<button type="button" class="btn btn-sec" data-acao="ir" data-etapa="' + R.ETAPAS[idx - 1].id + '">Anterior: ' + esc(R.ETAPAS[idx - 1].titulo) + '</button>' : '<span></span>';
     let prox = '';
-    if (et.id === 'sol') prox = '<button type="button" class="btn btn-pri" data-acao="finalizar">Finalizar e gerar diagnóstico</button>';
+    if (et.id === 'sol') prox = '<button type="button" class="btn btn-pri" data-acao="finalizar">Finalizar e gerar relatório</button>';
     else if (idx < R.ETAPAS.length - 1) prox = '<button type="button" class="btn btn-pri" data-acao="ir" data-etapa="' + R.ETAPAS[idx + 1].id + '">Próxima: ' + esc(R.ETAPAS[idx + 1].titulo) + '</button>';
     return '<div class="pag-rodape nao-imprimir">' + ant + prox + '</div>';
   }
@@ -218,7 +220,7 @@
       '<textarea id="' + o.id + '" class="resposta" rows="' + (o.linhas || 3) + '" data-path="' + o.path + '">' + esc(o.valor) + '</textarea>' +
       '<div class="pergunta-acoes">' + botaoVoz(o.id) +
       '<span class="voz-status" id="vs_' + o.id + '" aria-live="polite"></span>' +
-      '<label class="chk"><input type="checkbox" data-path="' + o.pathConf + '"' + (o.conf ? ' checked' : '') + '> Confirmar com o cliente</label>' +
+      '<label class="chk"><input type="checkbox" data-path="' + o.pathConf + '"' + (o.conf ? ' checked' : '') + '> Pendente: confirmar depois</label>' +
       '</div></div>';
   }
 
@@ -242,9 +244,9 @@
     const campos = chave === 'departamentos' ? R.CAMPOS_DEPARTAMENTO : R.CAMPOS_PROCESSO;
     const itens = estado[chave];
     let h = '<h2 class="painel-tit">' + (chave === 'departamentos' ? 'Departamentos cadastrados' : 'Processos mapeados') + ' <span class="painel-cont">' + itens.length + '</span></h2>';
-    if (chave === 'processos') {
-      h += '<datalist id="dl_departamentos">' + estado.departamentos.filter((d) => temTexto(d.nome)).map((d) => '<option value="' + esc(d.nome) + '">').join('') + '</datalist>';
-    }
+    const nomesDep = [...new Set(estado.departamentos.filter((d) => temTexto(d.nome)).map((d) => d.nome.trim()).concat(R.DEPARTAMENTOS_SUGERIDOS))];
+    h += '<datalist id="' + (chave === 'processos' ? 'dl_departamentos' : 'dl_dep_sugeridos') + '">' +
+      (chave === 'processos' ? nomesDep : R.DEPARTAMENTOS_SUGERIDOS).map((n) => '<option value="' + esc(n) + '">').join('') + '</datalist>';
     if (!itens.length) h += '<p class="vazio">Nenhum ' + sing + ' cadastrado.</p>';
     h += itens.map((x, i) => {
       const base = chave + '.#' + x.id;
@@ -258,7 +260,7 @@
       const linhas = corpo.filter((c) => c.startsWith('<div class="campo campo-linha"'));
       const textos = corpo.filter((c) => !c.startsWith('<div class="campo campo-linha"'));
       return '<div class="bloco" id="blk_' + x.id + '"><div class="bloco-cab"><span class="bloco-num">' + Sing + ' ' + (i + 1) + '</span>' +
-        '<input class="bloco-nome" type="text" aria-label="Nome do ' + sing + '" placeholder="Nome do ' + sing + '" data-path="' + base + '.nome" value="' + esc(x.nome) + '">' +
+        '<input class="bloco-nome" type="text" aria-label="Nome do ' + sing + '" placeholder="Nome do ' + sing + '" data-path="' + base + '.nome" value="' + esc(x.nome) + '"' + (chave === 'departamentos' ? ' list="dl_dep_sugeridos"' : '') + '>' +
         '<button type="button" class="btn-link" data-acao="remover" data-lista="' + chave + '" data-id="' + x.id + '">Remover</button></div>' +
         '<div class="bloco-corpo"><div class="grade-linhas">' + linhas.join('') + '</div>' + textos.join('') + '</div></div>';
     }).join('');
@@ -313,15 +315,14 @@
       renderPessoas('entrevistados', 'Entrevistados', [['nome', 'Nome'], ['cargo', 'Cargo ou função'], ['departamento', 'Departamento'], ['contato', 'Telefone ou e-mail']]);
   }
 
-  /* ---------- Diagnóstico ---------- */
+  /* ---------- Relatório de diagnóstico e proposta ---------- */
   function renderDiagnostico() {
     const d = estado.diagnostico;
     const g = progressoGeral();
     if (!d) {
-      return '<section class="painel"><p>O diagnóstico organiza as respostas da entrevista em perfil, processos, problemas, requisitos, integrações e proposta preliminar. ' +
-        'Cada item indica se foi informado pelo cliente, se é sugestão do sistema ou se está pendente de confirmação.</p>' +
-        '<p class="texto-sec">Respostas registradas: ' + g.feitas + ' de ' + g.total + '.</p>' +
-        '<button type="button" class="btn btn-pri" data-acao="gerar">Gerar diagnóstico</button></section>';
+      return '<section class="painel"><p>O relatório organiza a entrevista em resumo executivo, diagnóstico por departamento, processos atuais e futuros, soluções propostas, diagramas, requisitos, arquitetura, etapas de desenvolvimento, riscos e aprovação.</p>' +
+        '<p class="texto-sec">Cada item indica se foi informado pelo cliente, se está pendente, se é inferência do sistema ou recomendação técnica. Respostas registradas: ' + g.feitas + ' de ' + g.total + '.</p>' +
+        '<button type="button" class="btn btn-pri" data-acao="gerar">Gerar relatório</button></section>';
     }
     const c = estado.cadastro;
     const meta = [];
@@ -330,17 +331,19 @@
     meta.push('Gerado em ' + new Date(d.geradoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
 
     let h = '';
-    if (diagDesatualizado()) {
-      h += '<p class="aviso nao-imprimir">Respostas alteradas depois da geração. Use “Gerar novamente” para incluí-las; isso substitui as edições feitas no diagnóstico.</p>';
-    }
+    if (d.versao !== 2) h += '<p class="aviso nao-imprimir">Este relatório foi gerado no formato anterior. Use “Gerar novamente” para aplicar a nova análise por departamento.</p>';
+    if (diagDesatualizado()) h += '<p class="aviso nao-imprimir">Respostas alteradas depois da geração. Use “Gerar novamente” para incluí-las; isso substitui as edições feitas no relatório.</p>';
+    let n = 0;
+    const numeradas = d.secoes.map((s) => (s.anexo ? 'Anexo' : String(++n)));
     h += '<article class="painel doc">' +
-      '<header class="doc-cab"><p class="doc-marca">Requisio · Diagnóstico empresarial</p><h1>' + esc(temTexto(c.empresa) ? c.empresa : 'Empresa não informada') + '</h1>' +
+      '<header class="doc-cab"><p class="doc-marca">Requisio · Diagnóstico e proposta de solução</p><h1>' + esc(temTexto(c.empresa) ? c.empresa : 'Empresa não informada') + '</h1>' +
       '<p class="doc-meta">' + meta.join(' · ') + '</p>' +
-      '<p class="legenda"><span class="o-cliente">Informado pelo cliente</span><span class="o-sugestao">Sugestão do sistema</span><span class="o-pendente">Pendente de confirmação</span></p>' +
-      '<p class="texto-sec">Sugestões do sistema não são requisitos aprovados e dependem de validação com o cliente.<span class="nao-imprimir"> Todo o texto pode ser editado: clique no item para alterar.</span></p></header>';
+      '<p class="legenda">' + Object.keys(ORIGENS).map((k) => '<span class="o-' + k + '">' + ORIGENS[k] + '</span>').join('') + '</p>' +
+      '<p class="texto-sec">Inferências e recomendações do sistema não são requisitos aprovados. Somente itens e soluções marcados como aprovados pelo cliente valem como aprovados.<span class="nao-imprimir"> Todo o texto pode ser editado: clique no item para alterar.</span></p>' +
+      '<nav class="sumario" aria-label="Sumário"><p class="sumario-tit">Sumário</p><ol>' + d.secoes.map((s, i) => '<li><a href="#sec-' + s.id + '">' + (s.anexo ? '' : numeradas[i] + '. ') + esc(s.titulo) + '</a></li>').join('') + '</ol></nav></header>';
     h += d.secoes.map((s, i) => {
       const bs = 'diagnostico.secoes.#' + s.id;
-      return '<section class="diag-secao"><h2>' + (i + 1) + '. ' + esc(s.titulo) + '</h2>' +
+      return '<section class="diag-secao' + (s.anexo ? ' anexo' : '') + '" id="sec-' + s.id + '"><h2>' + (s.anexo ? '' : numeradas[i] + '. ') + esc(s.titulo) + '</h2>' +
         (temTexto(s.nota) ? '<p class="nota" contenteditable="' + EDITAVEL + '" data-path="' + bs + '.nota">' + esc(s.nota) + '</p>' : '') +
         s.grupos.map((gr) => renderGrupo(bs + '.grupos.#' + gr.id, gr)).join('') + '</section>';
     }).join('');
@@ -349,19 +352,83 @@
   }
 
   function renderGrupo(base, gr) {
-    const ativos = gr.itens;
-    let h = '<div class="diag-grupo"' + (gr.prefixo ? ' data-numerado' : '') + '><h3>' + esc(gr.titulo) + '</h3>';
-    if (!ativos.length) h += '<p class="vazio">Nenhum item.</p>';
-    h += ativos.map((it) => renderItem(base + '.itens.#' + it.id, it, gr)).join('');
+    const tag = gr.nivel === 4 ? 'h4' : 'h3';
+    const tit = temTexto(gr.titulo) ? '<' + tag + '>' + esc(gr.titulo) + '</' + tag + '>' : '';
+    const nota = temTexto(gr.nota) ? '<p class="nota" contenteditable="' + EDITAVEL + '" data-path="' + base + '.nota">' + esc(gr.nota) + '</p>' : '';
+    if (gr.tipo === 'cabecalho') return '<div class="dep-cab"><h3>' + esc(gr.titulo) + '</h3>' + nota + '</div>';
+    if (gr.tipo === 'diagrama') return renderDiagrama(base, gr, tit);
+    if (gr.tipo === 'validacao') return renderValidacao(gr, tit);
+    if (gr.tipo === 'aprovacoes') return '<div class="diag-grupo">' + tit + renderAprovacoes(gr) + '</div>';
+    if (gr.tipo === 'assinatura') {
+      return '<div class="diag-grupo">' + tit + '<div class="assinaturas">' +
+        ['Responsável pela empresa', 'Responsável pelo levantamento'].map((r) => '<div class="assinatura"><span class="assinatura-linha"></span><span>' + r + '</span><span class="texto-sec">Data: ____/____/______</span></div>').join('') + '</div></div>';
+    }
+    let h = '<div class="diag-grupo"' + (gr.prefixo ? ' data-numerado' : '') + '>' + tit + nota;
+    if (!gr.itens.length) h += '<p class="vazio">Nenhum item.</p>';
+    h += gr.itens.map((it) => renderItem(base + '.itens.#' + it.id, it, gr)).join('');
     h += '<button type="button" class="btn-link nao-imprimir" data-acao="add-item" data-grupo="' + base + '" data-status="' + (gr.comStatus ? '1' : '') + '">Adicionar item</button></div>';
     return h;
+  }
+
+  function renderDiagrama(base, gr, tit) {
+    return '<div class="diag-grupo diagrama-grupo">' + tit +
+      (gr.preliminar ? '<p class="o-pendente rotulo-prelim">Diagrama preliminar</p>' : '') +
+      (temTexto(gr.nota) ? '<p class="nota">' + esc(gr.nota) + '</p>' : '') +
+      '<div class="diagrama" data-mermaid data-codigo="' + esc(gr.codigo) + '"><p class="texto-sec">Desenhando diagrama…</p></div>' +
+      '<details class="nao-imprimir diagrama-codigo"><summary>Editar código do diagrama (Mermaid)</summary>' +
+      '<textarea class="codigo-mermaid" spellcheck="false" rows="8" data-path="' + base + '.codigo">' + esc(gr.codigo) + '</textarea></details></div>';
+  }
+
+  function validacaoDe(chave) {
+    return Object.assign({ status: 'pendente', comentario: '', data: '', versao: '' }, estado.validacao[chave] || {});
+  }
+
+  function renderValidacao(gr, tit) {
+    const v = validacaoDe(gr.chave);
+    const antiga = v.status !== 'pendente' && v.versao && estado.diagnostico && v.versao !== estado.diagnostico.geradoEm;
+    const quando = v.data ? ' em ' + new Date(v.data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+    return '<div class="diag-grupo validacao" data-validacao="' + gr.chave + '" data-status="' + v.status + '">' + tit +
+      '<div class="validacao-linha"><label for="val_' + gr.chave + '">Decisão do cliente</label>' +
+      '<select id="val_' + gr.chave + '" class="validacao-status" data-path="validacao.' + gr.chave + '.status">' +
+      Object.keys(VALIDACAO).map((k) => '<option value="' + k + '"' + (v.status === k ? ' selected' : '') + '>' + VALIDACAO[k] + '</option>').join('') + '</select>' +
+      '<span class="so-impressao rot-validacao">' + VALIDACAO[v.status] + quando + '</span>' +
+      '<span class="texto-sec validacao-data nao-imprimir">' + (v.status !== 'pendente' ? 'Registrada' + quando : 'Não aprovada') + '</span></div>' +
+      (antiga ? '<p class="aviso">Decisão registrada para uma versão anterior do relatório. Revise e confirme novamente.</p>' : '') +
+      '<label class="validacao-com-rot" for="valc_' + gr.chave + '">Comentário ou alterações solicitadas</label>' +
+      '<textarea id="valc_' + gr.chave + '" class="resposta validacao-com" rows="2" data-path="validacao.' + gr.chave + '.comentario">' + esc(v.comentario) + '</textarea></div>';
+  }
+
+  function renderAprovacoes(gr) {
+    if (!gr.chaves || !gr.chaves.length) return '<p class="vazio">Nenhuma solução proposta para aprovar.</p>';
+    return '<table class="tabela-aprov"><thead><tr><th>Solução</th><th>Decisão</th><th>Comentário</th></tr></thead><tbody>' +
+      gr.chaves.map((k, i) => {
+        const v = validacaoDe(k);
+        return '<tr data-aprov-chave="' + k + '"><td>' + esc(gr.nomes[i] || k) + '</td><td class="aprov-status" data-status="' + v.status + '">' + VALIDACAO[v.status] + '</td><td class="aprov-com">' + esc(v.comentario) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  function atualizarAprovacoes(chave) {
+    const v = validacaoDe(chave);
+    document.querySelectorAll('[data-aprov-chave="' + chave + '"]').forEach((tr) => {
+      const st = tr.querySelector('.aprov-status');
+      st.textContent = VALIDACAO[v.status];
+      st.dataset.status = v.status;
+      tr.querySelector('.aprov-com').textContent = v.comentario;
+    });
+    const bloco = document.querySelector('[data-validacao="' + chave + '"]');
+    if (bloco) {
+      bloco.dataset.status = v.status;
+      const quando = v.data ? ' em ' + new Date(v.data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+      bloco.querySelector('.rot-validacao').textContent = VALIDACAO[v.status] + quando;
+      bloco.querySelector('.validacao-data').textContent = v.status !== 'pendente' ? 'Registrada' + quando : 'Não aprovada';
+    }
   }
 
   function renderItem(base, it, gr) {
     const origemSel = '<select class="item-origem" aria-label="Origem da informação" data-path="' + base + '.origem">' +
       Object.keys(ORIGENS).map((k) => '<option value="' + k + '"' + (it.origem === k ? ' selected' : '') + '>' + ORIGENS[k] + '</option>').join('') + '</select>' +
-      '<span class="so-impressao rot-origem">' + ORIGENS[it.origem] + '</span>';
-    const statusSel = gr.comStatus ? '<select class="item-status" aria-label="Situação do requisito" data-path="' + base + '.status">' +
+      '<span class="so-impressao rot-origem">' + (ORIGENS[it.origem] || '') + '</span>';
+    const statusSel = gr.comStatus ? '<select class="item-status" aria-label="Situação" data-path="' + base + '.status">' +
       Object.keys(STATUS).map((k) => '<option value="' + k + '"' + (it.status === k ? ' selected' : '') + '>' + STATUS[k] + '</option>').join('') + '</select>' +
       '<span class="so-impressao rot-status">' + STATUS[it.status || 'a_validar'] + '</span>' : '';
     const cod = gr.prefixo ? '<span class="item-cod" data-p="' + esc(gr.prefixo) + '"></span>' : '';
@@ -401,6 +468,20 @@
       item.querySelector('.rot-status').textContent = STATUS[valor];
     }
     if (el.dataset.path === 'cadastro.empresa') atualizarTopo();
+    if (el.dataset.path.startsWith('validacao.')) {
+      const chave = el.dataset.path.split('.')[1];
+      if (el.classList.contains('validacao-status')) {
+        estado.validacao[chave].data = new Date().toISOString();
+        estado.validacao[chave].versao = estado.diagnostico ? estado.diagnostico.geradoEm : '';
+      }
+      atualizarAprovacoes(chave);
+    }
+    if (el.classList.contains('codigo-mermaid')) {
+      const alvo = el.closest('.diagrama-grupo').querySelector('.diagrama');
+      alvo.dataset.codigo = valor;
+      clearTimeout(el._timer);
+      el._timer = setTimeout(() => R.diagramas.redesenhar(alvo), 600);
+    }
     agendarSalvar();
     agendarProgresso();
   }
@@ -442,8 +523,8 @@
 
   function gerarDiagnostico() {
     salvarPendencias();
-    if (estado.diagnostico && !confirm('Gerar novamente substitui o diagnóstico atual, incluindo as edições feitas nele. Continuar?')) return false;
-    estado.diagnostico = R.diagnostico.gerar(estado);
+    if (estado.diagnostico && !confirm('Gerar novamente substitui o relatório atual, incluindo as edições feitas nele. As decisões de aprovação ficam registradas, mas passam a se referir à versão anterior. Continuar?')) return false;
+    estado.diagnostico = R.relatorio.gerar(estado);
     estado.meta.respostasAlteradasEm = '';
     estado.etapaAtual = 'diagnostico';
     agendarSalvar();
