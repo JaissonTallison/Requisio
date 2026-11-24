@@ -71,6 +71,7 @@
       if (A.semSistema) tipos.push('não há sistema de gestão em uso, então a base da solução é um sistema de mercado configurado ou desenvolvimento novo');
       else if (A.sistemasAtuais.length) tipos.push('há sistemas em uso que devem ser avaliados antes de desenvolver');
       if (depsComSolucao.some((d) => Object.values(d.padroes).some((p) => p.def.integracoes.length))) tipos.push('com integração bancária para pagamentos');
+      if (A.multiempresa) tipos.unshift('estrutura multiempresa como base comum (' + A.multiempresa.n + ' empresas' + (A.admin ? ', com ' + t(A.admin.nome) + ' na gestão do grupo e com operação própria separada' : '') + ')');
       resumoItens.push(it('Abordagem recomendada: soluções por departamento (' + depsComSolucao.map((d) => d.nome).join(', ') + ')' + (tipos.length ? '; ' + tipos.join(', ') : '') + '. Entrega por fases, começando pela prioridade informada pelo cliente.', 'recomendacao', 'Análise das respostas'));
     } else {
       resumoItens.push(it('Ainda não há informação suficiente para recomendar uma solução. Completar o levantamento.', 'pendente', ''));
@@ -110,7 +111,23 @@
         G('Problemas não associados a um departamento', A.geral.problemas.map((f) => it(f.texto, f.pendente ? 'pendente' : 'cliente', f.fonte)))
       ].filter((g) => g.itens.length)
     };
-    if (A.multiempresa) geralSec.grupos.splice(2, 0, G('Estrutura societária', [it('Operação com ' + A.multiempresa.n + ' empresas, conforme “' + resumo(A.multiempresa.texto) + '”. A solução precisa separar os dados por empresa e permitir visão consolidada.', 'inferencia', A.multiempresa.fonte)]));
+    const papelTxt = (v) => ((R.PAPEIS_EMPRESA || []).find((x) => x[0] === v) || ['', 'papel não definido'])[1];
+    if (A.grupo.length >= 2) {
+      const itensGrupo = A.grupo.map((x) => it([t(x.nome) + ' — ' + papelTxt(x.papel), t(x.areas) ? 'Áreas: ' + t(x.areas) : '', t(x.cnpj) ? 'CNPJ: ' + t(x.cnpj) : '', t(x.obs)].filter(Boolean).join('\n'),
+        x.confirmar || !x.papel ? 'pendente' : 'cliente', 'Cadastro › Empresas do grupo'));
+      if (!A.admin) itensGrupo.push(it('Empresa administradora não definida.', 'pendente', 'Cadastro › Empresas do grupo'));
+      if (A.admin && A.admin.papel === 'administradora_operacional') itensGrupo.push(it(t(A.admin.nome) + ' tem duas visões: gestão do grupo e operação própria. As movimentações próprias não podem se misturar com as das outras empresas.', 'inferencia', 'Cadastro › Empresas do grupo'));
+      geralSec.grupos.splice(1, 0,
+        G('Estrutura do grupo', itensGrupo),
+        G('Diagrama do grupo', [], { tipo: 'diagrama', codigo: R.diagramas.organograma(A.grupo, papelTxt), preliminar: A.grupo.some((x) => x.confirmar || !x.papel), nota: 'Baseado no cadastro das empresas.', nivel: 4 }));
+      const deps = E.departamentos.filter((d) => t(d.nome));
+      if (deps.length) {
+        const onde = (v) => ((R.ONDE_FUNCIONA || []).find((x) => x[0] === v) || ['', ''])[1];
+        geralSec.grupos.splice(3, 0, G('Departamentos e empresas', deps.map((d) => it(t(d.nome) + ': ' + (d.onde ? onde(d.onde) : 'onde funciona no grupo não definido'), d.onde ? 'cliente' : 'pendente', 'Departamentos'))));
+      }
+    } else if (A.multiempresa) {
+      geralSec.grupos.splice(2, 0, G('Estrutura societária', [it('Operação com ' + A.multiempresa.n + ' empresas, conforme “' + resumo(A.multiempresa.texto) + '”. A solução precisa separar os dados por empresa e permitir visão consolidada.', 'inferencia', A.multiempresa.fonte)]));
+    }
 
     /* ================= 3. Diagnóstico por departamento ================= */
     const depSec = { id: 'departamentos', titulo: 'Diagnóstico por departamento', nota: 'Cada departamento reúne o que foi informado sobre ele. Frases associadas pelo assunto (sem citar o departamento) indicam isso na fonte.', grupos: [] };
@@ -195,6 +212,27 @@
       solSec.grupos.push(cab(d.nome), G('Situação', [it('Informações insuficientes para propor solução para ' + d.nome + '. Levantar processos e problemas da área.', 'pendente', '')]
         .concat(d.requisitos.map((r) => it(r.texto + (r.vaga ? ' (detalhar)' : ''), r.pendente ? 'pendente' : 'cliente', r.fonte, st))), { nivel: 4, comStatus: d.requisitos.length > 0 }));
     });
+    if (A.multiempresa) {
+      const nomeAdm = A.admin ? t(A.admin.nome) : 'a administradora';
+      const respG = (id) => { const r = A.resposta(id); return r && r.classe !== 'vazia' ? [it(curto(id) + ': ' + r.texto, origemDe(r), r.fonte)] : []; };
+      solSec.grupos.push(cab('Estrutura multiempresa', 'Base comum a todas as soluções: ' + A.multiempresa.n + ' empresas com dados separados e visão consolidada.'));
+      solSec.grupos.push(G('Problema que será resolvido', [it('Operação com ' + A.multiempresa.n + ' empresas' + (A.admin ? ', sendo ' + nomeAdm + ' a administradora' : '') + '. Sem separação estruturada, as movimentações de uma empresa se misturam com as das outras e a consolidação do grupo é manual.', 'inferencia', A.multiempresa.fonte)].concat(respG('grp_segregacao'), respG('grp_admin_receita')), { nivel: 4 }));
+      solSec.grupos.push(G('Objetivo da solução', [it('Cada empresa com seus próprios registros, contas, contratos e pessoal; ' + nomeAdm + ' com duas visões separadas: gestão do grupo e operação própria.', 'recomendacao', 'Estrutura multiempresa')], { nivel: 4 }));
+      const fm = [['Cadastro das empresas do grupo e do papel de cada uma', 'padrao'], ['Separação de todos os registros por empresa', 'padrao'], ['Visão da administradora: gestão do grupo separada da operação própria', 'especifica'], ['Relatórios por empresa e consolidados do grupo', 'padrao'], ['Perfis de acesso por empresa', 'padrao'], ['Registro de transações entre empresas (repasses, rateios, taxa de administração, pessoal compartilhado)', 'especifica']];
+      solSec.grupos.push(G('Módulos e funcionalidades', fm.map(([f, tp]) => it(f + '\nEntrega: ' + entrega(tp), 'recomendacao', 'Estrutura multiempresa', st)), { nivel: 4, prefixo: 'F', comStatus: true }));
+      solSec.grupos.push(G('Atores e permissões', [it('Gestão do grupo (' + nomeAdm + '): vê e consolida todas as empresas.', 'recomendacao', 'Estrutura multiempresa'), it('Usuários de cada empresa: veem e registram apenas os dados da sua empresa.', 'recomendacao', 'Estrutura multiempresa')].concat(respG('grp_acessos')), { nivel: 4 }));
+      const rgm = respG('grp_cobranca').concat(respG('grp_intercompany'), respG('grp_decisoes'));
+      ['grp_cobranca', 'grp_intercompany', 'grp_consolidado'].forEach((id) => { const r = A.resposta(id); if (!r || r.classe === 'vazia') rgm.push(it('A definir com o cliente: ' + R.PERGUNTAS[id].q, 'pendente', 'Estrutura multiempresa')); });
+      solSec.grupos.push(G('Regras de negócio', rgm, { nivel: 4 }));
+      solSec.grupos.push(G('Critérios de aceitação', [
+        'Os lançamentos de ' + nomeAdm + ' como empresa operacional não aparecem nos números das outras empresas, e vice-versa.',
+        'O relatório consolidado soma as ' + A.multiempresa.n + ' empresas e permite abrir cada uma separadamente.',
+        'Transações entre empresas aparecem nas duas empresas envolvidas e são identificadas no consolidado.',
+        'Um usuário de uma empresa operacional não acessa dados de outra empresa.'
+      ].map((x) => it(x, 'recomendacao', 'Estrutura multiempresa')), { nivel: 4, prefixo: 'CA' }));
+      solSec.grupos.push(G('Dependências e riscos', [it('Rateios, taxa de administração e pessoal compartilhado precisam de regra definida antes do desenvolvimento.', 'inferencia', 'Estrutura multiempresa'), it('Se a contabilidade for externa, alinhar com o contador a forma de separar e consolidar.', 'inferencia', 'Estrutura multiempresa')], { nivel: 4 }));
+      solSec.grupos.push(G('Validação da solução', [], { tipo: 'validacao', chave: 'multiempresa', nivel: 4 }));
+    }
     const transv = Object.values(A.padroesGerais);
     if (transv.length) {
       solSec.grupos.push(cab('Entre departamentos', 'Necessidades que envolvem várias áreas.'));
@@ -294,6 +332,7 @@
       etapas.push('Escolher a forma de entrega' + (A.semSistema ? ' (sistema de mercado configurado ou desenvolvimento novo, já que não há sistema em uso)' : '') + '.');
       const ents = unicos(depsComSolucao.flatMap((d) => Object.values(d.padroes).flatMap((p) => p.def.entidades.map((e) => e[0]))));
       etapas.push('Modelar os dados e criar os cadastros base' + (A.multiempresa ? ' (empresas' + (ents.length ? ', ' : '') : (ents.length ? ' (' : '')) + ents.join(', ') + (A.multiempresa || ents.length ? ')' : '') + '.');
+      if (A.multiempresa) etapas.push('Estrutura multiempresa: cadastro das ' + A.multiempresa.n + ' empresas, separação dos dados, visão da administradora e perfis de acesso por empresa. Vem antes dos módulos dos departamentos.');
       depsComSolucao.forEach((d) => {
         const fs = unicos(Object.values(d.padroes).flatMap((p) => p.def.funcionalidades.filter((f) => f[1] !== 'integracao').map((f) => f[0])));
         etapas.push(d.nome + ': ' + fs.join('; ') + '.');
@@ -351,7 +390,7 @@
     prox.push(it('Com as soluções aprovadas, detalhar requisitos, prazo e investimento da primeira fase.', 'recomendacao', 'Sugestão do sistema'));
     const aprovSec = {
       id: 'aprovacao', titulo: 'Próximos passos e aprovação do cliente', nota: '',
-      grupos: [G('Situação das soluções', [], { tipo: 'aprovacoes', chaves: depsComSolucao.map((d) => d.chave).concat(transv.length ? ['entre_departamentos'] : []), nomes: depsComSolucao.map((d) => d.nome).concat(transv.length ? ['Entre departamentos'] : []) }), G('Próximos passos', prox), G('Aceite', [], { tipo: 'assinatura' })]
+      grupos: [G('Situação das soluções', [], { tipo: 'aprovacoes', chaves: (A.multiempresa ? ['multiempresa'] : []).concat(depsComSolucao.map((d) => d.chave), transv.length ? ['entre_departamentos'] : []), nomes: (A.multiempresa ? ['Estrutura multiempresa'] : []).concat(depsComSolucao.map((d) => d.nome), transv.length ? ['Entre departamentos'] : []) }), G('Próximos passos', prox), G('Aceite', [], { tipo: 'assinatura' })]
     };
 
     /* ================= Anexo técnico: respostas originais ================= */

@@ -190,6 +190,25 @@ input[type="checkbox"] { width: 16px; height: 16px; border-radius: 2px; accent-c
 .pessoas-cab, .pessoas-linha { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)) 80px; gap: 8px; align-items: center; }
 .pessoas-cab span { font-size: 14px; font-weight: 600; }
 
+/* ---------- Módulos, grupo e conferência ---------- */
+.modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 10px; }
+.modulo { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--borda); border-radius: var(--raio); cursor: pointer; font-size: 14px; }
+.modulo input { margin-top: 3px; flex: none; }
+.modulo:has(input:checked) { border-color: var(--azul); background: var(--azul-claro); }
+.modulo-tit { margin: 20px 0 4px; padding-top: 16px; border-top: 1px solid var(--borda); }
+.painel > .modulo-tit:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.modulo-tit + .pergunta { border-top: 0; padding-top: 4px; }
+.lista-acoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.chk-bloco { margin: 8px 0 12px; }
+.conferencia { border-color: var(--azul); }
+.conf-resumo { margin: 0 0 8px; font-weight: 600; color: var(--alerta); }
+.conf-ok { margin: 0; font-weight: 600; color: var(--inferencia); }
+.conf-grupo { border-top: 1px solid var(--borda-2); padding: 6px 0; }
+.conf-grupo summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.conf-grupo ul { list-style: none; margin: 4px 0 6px; padding: 0; }
+.conf-grupo li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; font-size: 14px; border-bottom: 1px dashed var(--borda-2); }
+.conf-grupo li:last-child { border-bottom: 0; }
+
 /* ---------- Fotos e documentos ---------- */
 .arquivo-oculto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 .anexos-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }

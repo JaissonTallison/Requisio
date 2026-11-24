@@ -66,6 +66,23 @@
       '  S->>B: Envia o lote\n  B-->>S: Retorno com pagos e rejeitados\n  S-->>F: Concilia e avisa pendências\n'
   };
 
+  /* Estrutura do grupo: administradora no topo e empresas operacionais abaixo. */
+  function organograma(grupo, rotuloPapel) {
+    if (!grupo.length) return '';
+    const admin = grupo.find((x) => /^administradora/.test(x.papel || ''));
+    const ops = grupo.filter((x) => x !== admin);
+    let c = 'flowchart TD\n';
+    if (admin) {
+      c += '  ADM["' + lab(admin.nome, 40) + ' · ' + lab(rotuloPapel(admin.papel), 50) + '"]\n';
+      if (admin.papel === 'administradora_operacional') c += '  OPP["Operação própria de ' + lab(admin.nome, 40) + '"]\n  ADM -.->|"mesma empresa, contas separadas"| OPP\n';
+    }
+    c += '  subgraph OPS["Empresas operacionais"]\n';
+    ops.forEach((x, i) => { c += '    E' + i + '["' + lab(x.nome, 40) + (x.areas ? ' · ' + lab(x.areas, 40) : '') + '"]\n'; });
+    c += '  end\n';
+    if (admin) c += '  ADM -->|"gestão centralizada e prestação de contas"| OPS\n';
+    return c;
+  }
+
   function arquitetura(o) {
     let c = 'flowchart LR\n';
     c += '  U["Usuários: ' + lab(o.usuarios || 'perfis a definir', 50) + '"]\n';
@@ -136,5 +153,5 @@
     try { await desenharUm(await carregarMermaid(), el); } catch (e) { /* aviso já exibido */ }
   }
 
-  R.diagramas = { fluxoRaias, fluxoSimples, casosDeUso, classes, arquitetura, SEQUENCIAS, desenhar, redesenhar };
+  R.diagramas = { fluxoRaias, fluxoSimples, casosDeUso, classes, arquitetura, organograma, SEQUENCIAS, desenhar, redesenhar };
 })();

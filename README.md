@@ -12,6 +12,20 @@ Ferramenta de levantamento de requisitos e mapeamento de processos para usar em 
 ## Entrevista
 
 - **Salvamento automático:** cada alteração é gravada no aparelho cerca de 0,15 s depois da digitação, ao sair de um campo, ao trocar de etapa e ao fechar, minimizar ou atualizar a página. A etapa aberta também é restaurada.
+- **Módulos de perguntas:** no Cadastro, ative conforme o cliente:
+  - Grupo com várias empresas;
+  - Equipes com vínculos variados;
+  - Licitações e contratos públicos;
+  - Prestação de contas e contabilidade;
+  - Operação em várias áreas de serviço.
+
+  Cada módulo acrescenta perguntas, com exemplos, nas etapas correspondentes. Num cliente simples, basta não ativar nada.
+- **Grupo de empresas:** com o módulo de grupo ativo, o Cadastro lista as empresas e o papel de cada uma (administradora com operação própria, só administradora ou operacional). Cada departamento ganha o campo **Onde funciona no grupo** (centralizado na administradora, em cada empresa ou misto). O botão **Adicionar departamentos sugeridos** cria Licitações, Contratos, Financeiro, Compras, Recursos Humanos, Operacional, Administrativo e Contabilidade e prestação de contas.
+- **Conferência antes de sair da visita:** no topo da etapa Solução desejada, lista em tempo real o que falta. Cada item tem o botão **Ir**, que leva direto à pergunta.
+  - Perguntas essenciais sem resposta e respostas vagas.
+  - Empresas sem papel ou CNPJ.
+  - Departamentos sem responsável, sem atividades, sem definição de onde funcionam ou sem processo mapeado.
+  - Volumes divergentes e respostas marcadas para confirmar.
 - **Exemplos de resposta:** abaixo de cada pergunta, em cinza claro, há exemplos para o entrevistador orientar quem não sabe responder. Tocar num exemplo insere o texto no campo, onde pode ser editado; nada é preenchido sem esse toque.
 - **Voltar sem perder nada:** os botões Anterior e Próxima, o gesto de voltar do celular e o botão Voltar do navegador trocam de etapa dentro do Requisio; nada do que foi preenchido é apagado.
 - **Fotos e documentos:** cada etapa tem **Tirar foto** (abre a câmera no celular e no tablet) e **Anexar arquivo** (planilhas, PDFs, imagens, documentos), com descrição. Fotos grandes são reduzidas para até 1600 px. Limite de 30 MB por arquivo. As descrições entram na análise, e os anexos aparecem no anexo técnico do relatório.
@@ -40,6 +54,7 @@ A análise é feita por regras, no próprio navegador:
 - **Identifica os departamentos:** os cadastrados, os citados na estrutura organizacional e os citados nas respostas. Cada frase é associada ao departamento citado pelo nome ou, se nenhum for citado, pelo assunto (“pagamento via PIX” → Financeiro). A fonte do item indica quando a associação foi pelo assunto.
 - **Reconhece padrões de problema pelo contexto**, não por palavra solta: “pagamento” só vira o padrão de pagamentos manuais quando aparece junto de execução manual (“um por um”, “pelo app do banco”); termos negados (“não usamos planilha”) são ignorados. Cada padrão traz causa, impacto, objetivo, processo futuro, funcionalidades, atores, critérios de aceitação, riscos e perguntas a esclarecer.
 - **Extrai volumes e aponta divergências**, por exemplo “100 pix” num campo e “500 pessoas por semana” em outro.
+- **Padrões para contratos públicos:** gestão de licitações, contratos públicos (vigência, medições, recebimentos, resultado por contrato), pessoal com vínculos variados e diárias, e prestação de contas por empresa e por contrato.
 - **Detecta operação com várias empresas, o aprovador** (por exemplo, “o CEO é a palavra final”) **e prazo curto** para o escopo.
 
 Para incluir um novo padrão, acrescente um item em `PADROES` (em `js/analise.js`).
@@ -59,6 +74,8 @@ Para incluir um novo padrão, acrescente um item em `PADROES` (em `js/analise.js
 11. Estimativa preliminar, apresentada só com dados suficientes; caso contrário, lista o que falta
 12. Próximos passos e aprovação do cliente, com a situação de cada solução e espaço para assinatura
 
+Com várias empresas, o diagnóstico geral mostra a **estrutura do grupo**, com diagrama, e a matriz **departamentos × empresas**. As soluções incluem a **Estrutura multiempresa**, base comum a todas: dados separados por empresa, administradora com a visão do grupo separada da operação própria, consolidação, perfis por empresa e transações entre empresas. Ela tem validação própria.
+
 As respostas originais ficam no **anexo técnico**, sem repetir o questionário no corpo do relatório.
 
 **Origem de cada item:** *Informado pelo cliente*, *Pendente de confirmação*, *Inferência do sistema* ou *Recomendação técnica*. Requisitos, regras e funcionalidades começam como “A validar”. Só valem como aprovados os itens marcados como “Aprovado” e as soluções com decisão “Aprovada”.
@@ -68,6 +85,10 @@ As respostas originais ficam no **anexo técnico**, sem repetir o questionário 
 **Diagramas:** usam Mermaid e podem ser editados em “Editar código do diagrama”. A biblioteca (`lib/mermaid/mermaid.min.js`, versão 11.12.3, licença MIT) fica no projeto para funcionar sem internet e só é carregada ao abrir o relatório.
 
 **Exportar e importar JSON:** guarda ou transfere o levantamento completo, inclusive o relatório editado, as decisões e os arquivos anexados. Importar acrescenta o levantamento à lista sem apagar os outros; se ele já existir, dá para substituir o salvo ou importar como cópia. Arquivos do formato anterior continuam abrindo e podem ser gerados de novo no formato atual.
+
+## Levantamentos preparados antes da visita
+
+Arquivos JSON de clientes ficam em `levantamentos/`, que o git ignora (não vão para o repositório nem para o site). Para usar no celular ou tablet, envie o arquivo para o aparelho e use **Importar JSON**. O que foi informado antes da visita entra marcado como **Pendente: confirmar depois**; na visita, confirme ou corrija e desmarque.
 
 ## Arquivos
 
