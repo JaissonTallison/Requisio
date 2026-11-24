@@ -9,9 +9,12 @@
 <body>
   <header class="topo">
     <div class="topo-marca">Requisio</div>
-    <div class="topo-empresa" id="topoEmpresa"></div>
-    <div class="topo-status" id="statusSalvo" aria-live="polite"></div>
-    <div class="topo-acoes">
+    <div class="topo-info">
+      <div class="topo-empresa" id="topoEmpresa"></div>
+      <div class="topo-status" id="statusSalvo" aria-live="polite"></div>
+    </div>
+    <button type="button" class="btn btn-sec topo-menu-btn" data-acao="menu" aria-expanded="false" aria-controls="topoAcoes">Arquivo</button>
+    <div class="topo-acoes" id="topoAcoes">
       <button type="button" class="btn btn-sec" data-acao="importar">Importar JSON</button>
       <button type="button" class="btn btn-sec" data-acao="exportar">Exportar JSON</button>
       <button type="button" class="btn btn-sec" data-acao="novo">Novo levantamento</button>

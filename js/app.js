@@ -36,6 +36,7 @@
 
   function mostrarStatus(txt, erro) {
     statusSalvo.textContent = txt;
+    statusSalvo.title = txt;
     statusSalvo.classList.toggle('erro', !!erro);
   }
 
@@ -180,7 +181,9 @@
     const p = progressoEtapa(et);
     const seletor = '<div class="seletor-etapa nao-imprimir"><label for="selEtapa">Etapa</label><select id="selEtapa">' +
       R.ETAPAS.map((e, i) => '<option value="' + e.id + '"' + (e.id === et.id ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(e.titulo) + '</option>').join('') +
-      '</select></div>';
+      '</select>' +
+      '<button type="button" class="btn btn-sec" aria-label="Etapa anterior" title="Etapa anterior"' + (idx > 0 ? ' data-acao="ir" data-etapa="' + R.ETAPAS[idx - 1].id + '"' : ' disabled') + '>‹</button>' +
+      '<button type="button" class="btn btn-sec" aria-label="Próxima etapa" title="Próxima etapa"' + (idx < R.ETAPAS.length - 1 ? ' data-acao="ir" data-etapa="' + R.ETAPAS[idx + 1].id + '"' : ' disabled') + '>›</button></div>';
     let dir = '';
     if (p) dir = '<span class="pag-prog" id="progEtapa">' + p.feitas + ' de ' + p.total + ' respondidas</span>';
     if (et.tipo === 'diagnostico' && estado.diagnostico) {
@@ -370,9 +373,12 @@
   }
 
   /* ================= Edição ================= */
+  /* Cresce o campo conforme o texto sem deixar a página pular durante a digitação. */
   function ajustarAltura(el) {
+    const y = window.scrollY;
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 2 + 'px';
+    if (window.scrollY !== y) window.scrollTo(0, y);
   }
 
   function aoEditar(e) {
@@ -524,7 +530,18 @@
     }
   };
 
+  /* Menu "Arquivo" do topo em telas estreitas */
+  const topoAcoes = document.getElementById('topoAcoes');
+  const menuBtn = document.querySelector('.topo-menu-btn');
+  function menuAberto(abrir) {
+    topoAcoes.classList.toggle('aberto', abrir);
+    menuBtn.setAttribute('aria-expanded', String(abrir));
+  }
+  ACOES.menu = () => menuAberto(!topoAcoes.classList.contains('aberto'));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menuAberto(false); });
+
   document.addEventListener('click', (e) => {
+    if (!e.target.closest('.topo-menu-btn')) menuAberto(false);
     const b = e.target.closest('[data-acao]');
     if (!b || b.disabled) return;
     const fn = ACOES[b.dataset.acao];
