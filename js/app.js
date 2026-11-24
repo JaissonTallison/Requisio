@@ -5,6 +5,7 @@
   const A = R.armazenamento;
 
   let estado = A.carregar();
+  let visao = null; // 'lista' = tela de levantamentos salvos
 
   const principal = document.getElementById('principal');
   const nav = document.getElementById('navEtapas');
@@ -41,26 +42,80 @@
     statusSalvo.classList.toggle('erro', !!erro);
   }
 
+  const ABA = R.uid();
+  let baseSalva = estado.meta.atualizadoEm || '';
+
   function agendarSalvar() {
     sujo = true;
     estado.meta.atualizadoEm = new Date().toISOString();
     mostrarStatus('Salvando…');
     clearTimeout(timerSalvar);
-    timerSalvar = setTimeout(salvarAgora, 300);
+    timerSalvar = setTimeout(salvarAgora, 150);
   }
 
-  function salvarAgora() {
+  /* Outra aba (ou esta aba reaberta) gravou depois da última sincronização? */
+  function outraAbaGravouDepois() {
+    const m = A.marca();
+    return !!(m && m.aba && m.aba !== ABA && m.em > baseSalva);
+  }
+
+  function salvarAgora(imediato) {
     clearTimeout(timerSalvar);
     if (!sujo) return;
-    const ok = A.salvar(estado);
-    sujo = !ok;
-    if (ok) mostrarStatus('Salvo automaticamente às ' + hora(new Date()));
-    else mostrarStatus('Não foi possível salvar no navegador (armazenamento cheio ou bloqueado). Exporte o JSON para não perder dados.', true);
+    if (outraAbaGravouDepois()) {
+      // Esta aba estava desatualizada: guarda a versão dela à parte e carrega a mais recente.
+      A.guardarConflito(estado);
+      sujo = false;
+      adotarArmazenado('Este levantamento foi alterado em outra aba ou aparelho aberto aqui. Os dados mais recentes foram carregados; a versão desta aba ficou guardada como cópia.');
+      return;
+    }
+    const ok = A.salvar(estado, ABA, imediato === true);
+    sujo = false;
+    baseSalva = estado.meta.atualizadoEm;
+    if (ok) mostrarStatus('Salvo neste aparelho às ' + hora(new Date()));
+    else mostrarStatus('Armazenamento principal cheio ou bloqueado: os dados estão na cópia de segurança do navegador. Exporte o JSON para garantir.', true);
   }
 
-  window.addEventListener('pagehide', salvarAgora);
-  window.addEventListener('beforeunload', salvarAgora);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') salvarAgora(); });
+  /* Carrega o que está gravado (feito por outra aba) e redesenha a tela. */
+  function adotarArmazenado(msg) {
+    const novo = A.lerLocal(A.CHAVE);
+    if (!novo) return false;
+    R.voz.parar();
+    estado = novo;
+    baseSalva = estado.meta.atualizadoEm || '';
+    render();
+    if (msg) mostrarStatus(msg, true);
+    return true;
+  }
+
+  const salvarJa = () => salvarAgora(true);
+  window.addEventListener('pagehide', salvarJa);
+  window.addEventListener('beforeunload', salvarJa);
+  document.addEventListener('freeze', salvarJa);
+  document.addEventListener('focusout', () => salvarAgora());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') salvarJa();
+    else verificarAtualizacaoExterna();
+  });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) verificarAtualizacaoExterna(); });
+
+  /* Ao voltar para a aba: se outra aba gravou algo mais novo, carrega antes de continuar. */
+  function verificarAtualizacaoExterna() {
+    if (sujo) return;
+    const m = A.marca();
+    if (m && m.aba !== ABA && m.em > (estado.meta.atualizadoEm || '')) adotarArmazenado('Dados atualizados com as alterações feitas em outra aba.');
+  }
+
+  /* Outra aba gravou: mantém esta aba igual, para nenhuma gravar por cima da outra. */
+  window.addEventListener('storage', (e) => {
+    if (e.key !== A.CHAVE || !e.newValue) return;
+    if (sujo) salvarAgora();
+    const m = A.marca();
+    if (m && m.aba !== ABA && m.em > (estado.meta.atualizadoEm || '')) adotarArmazenado('Dados atualizados com as alterações feitas em outra aba.');
+  });
+
+  window.addEventListener('offline', () => mostrarStatus('Sem internet. O preenchimento continua sendo salvo neste aparelho; a gravação por voz volta com a conexão.', true));
+  window.addEventListener('online', () => mostrarStatus('Conexão restabelecida. Dados salvos neste aparelho.'));
 
   /* ================= Caminhos no estado =================
      "cadastro.empresa", "respostas.emp_atividade.texto", "departamentos.#id.nome" */
@@ -159,7 +214,7 @@
       '<div class="nav-prog"><span>Progresso da entrevista</span><strong id="progTotal">' + g.feitas + ' de ' + g.total + ' respondidas · ' + g.pct + '%</strong></div>' +
       '<ol class="nav-lista">' + R.ETAPAS.map((e, i) => {
         const p = progressoEtapa(e);
-        const ativo = e.id === estado.etapaAtual;
+        const ativo = visao !== 'lista' && e.id === estado.etapaAtual;
         return '<li><button type="button" class="nav-item' + (ativo ? ' ativo' : '') + '" data-acao="ir" data-etapa="' + e.id + '"' + (ativo ? ' aria-current="step"' : '') + '>' +
           '<span class="nav-num">' + (i + 1) + '</span><span class="nav-nome">' + esc(e.titulo) + '</span>' +
           '<span class="nav-cont" data-cont="' + e.id + '">' + (p ? p.feitas + '/' + p.total : textoDiag()) + '</span></button></li>';
@@ -167,6 +222,7 @@
   }
 
   function renderPrincipal() {
+    if (visao === 'lista') { renderLevantamentos(); return; }
     let et = etapaPorId(estado.etapaAtual);
     if (!et) { et = R.ETAPAS[0]; estado.etapaAtual = et.id; }
     let corpo;
@@ -176,6 +232,7 @@
     principal.innerHTML = cabecalho(et) + corpo + rodape(et);
     principal.querySelectorAll('textarea.resposta').forEach(ajustarAltura);
     if (et.tipo === 'diagnostico') R.diagramas.desenhar(principal);
+    carregarAnexosVisiveis();
   }
 
   function cabecalho(et) {
@@ -234,6 +291,7 @@
       return campo({ id: 'r_' + p.id, rotulo: p.q, ajuda: p.ajuda, path: 'respostas.' + p.id + '.texto', valor: r.texto, pathConf: 'respostas.' + p.id + '.confirmar', conf: r.confirmar });
     }).join('');
     h += renderExtras(et) + '</section>';
+    h += renderAnexos(et.id);
     return h;
   }
 
@@ -312,7 +370,8 @@
       inp('dataVisita', 'Data da visita', 'date') + inp('consultor', 'Responsável pelo levantamento') +
       '</div></section>' +
       renderPessoas('responsaveis', 'Responsáveis na empresa', [['nome', 'Nome'], ['cargo', 'Cargo'], ['contato', 'Telefone ou e-mail']]) +
-      renderPessoas('entrevistados', 'Entrevistados', [['nome', 'Nome'], ['cargo', 'Cargo ou função'], ['departamento', 'Departamento'], ['contato', 'Telefone ou e-mail']]);
+      renderPessoas('entrevistados', 'Entrevistados', [['nome', 'Nome'], ['cargo', 'Cargo ou função'], ['departamento', 'Departamento'], ['contato', 'Telefone ou e-mail']]) +
+      renderAnexos('cadastro');
   }
 
   /* ---------- Relatório de diagnóstico e proposta ---------- */
@@ -358,6 +417,7 @@
     if (gr.tipo === 'cabecalho') return '<div class="dep-cab"><h3>' + esc(gr.titulo) + '</h3>' + nota + '</div>';
     if (gr.tipo === 'diagrama') return renderDiagrama(base, gr, tit);
     if (gr.tipo === 'validacao') return renderValidacao(gr, tit);
+    if (gr.tipo === 'anexos') return '<div class="diag-grupo">' + tit + renderAnexosRelatorio() + '</div>';
     if (gr.tipo === 'aprovacoes') return '<div class="diag-grupo">' + tit + renderAprovacoes(gr) + '</div>';
     if (gr.tipo === 'assinatura') {
       return '<div class="diag-grupo">' + tit + '<div class="assinaturas">' +
@@ -377,6 +437,16 @@
       '<div class="diagrama" data-mermaid data-codigo="' + esc(gr.codigo) + '"><p class="texto-sec">Desenhando diagrama…</p></div>' +
       '<details class="nao-imprimir diagrama-codigo"><summary>Editar código do diagrama (Mermaid)</summary>' +
       '<textarea class="codigo-mermaid" spellcheck="false" rows="8" data-path="' + base + '.codigo">' + esc(gr.codigo) + '</textarea></details></div>';
+  }
+
+  function renderAnexosRelatorio() {
+    if (!estado.anexos.length) return '<p class="vazio">Nenhum anexo.</p>';
+    return '<div class="anexos-rel">' + estado.anexos.map((a) => {
+      const et = etapaPorId(a.etapa);
+      return '<figure class="anexo-rel">' + (ehImagem(a) ? '<img alt="' + esc(a.descricao || a.nome) + '" data-anexo-img="' + a.id + '">' : '') +
+        '<figcaption><strong>' + esc(a.nome) + '</strong> · ' + esc(et ? et.titulo : '') + (temTexto(a.descricao) ? '<br>' + esc(a.descricao) : '') +
+        ' <a class="btn-link nao-imprimir" data-anexo-link="' + a.id + '" target="_blank" rel="noopener" download="' + esc(a.nome) + '">Abrir</a></figcaption></figure>';
+    }).join('') + '</div>';
   }
 
   function validacaoDe(chave) {
@@ -450,6 +520,7 @@
 
   function aoEditar(e) {
     const el = e.target;
+    if (el.dataset && el.dataset.anexar !== undefined) { if (e.type === 'change') anexarArquivos(el); return; }
     if (el.id === 'selEtapa') { if (e.type === 'change') ir(el.value); return; }
     if (!el.dataset || !el.dataset.path) return;
     const valor = el.type === 'checkbox' ? el.checked : el.isContentEditable ? el.innerText.replace(/\n$/, '') : el.value;
@@ -498,12 +569,27 @@
   });
 
   /* ================= Ações ================= */
-  function ir(id) {
+  /* Troca de etapa. Cada etapa entra no histórico: o gesto ou botão Voltar volta de etapa. */
+  function ir(id, semHistorico) {
     if (!etapaPorId(id)) return;
     salvarPendencias();
     estado.etapaAtual = id;
+    visao = null;
     agendarSalvar();
+    salvarAgora(true);
+    if (!semHistorico) {
+      try { history.pushState({ etapa: id }, '', '#' + id); } catch (e) { /* sem histórico (ex.: arquivo local restrito) */ }
+    }
     render(true);
+  }
+
+  window.addEventListener('popstate', (e) => {
+    const id = e.state && e.state.etapa;
+    if (id && (id !== estado.etapaAtual || visao)) ir(id, true);
+  });
+
+  function marcarHistorico() {
+    try { history.replaceState({ etapa: estado.etapaAtual }, '', '#' + estado.etapaAtual); } catch (e) { /* ignora */ }
   }
 
   /* Garante que o valor digitado no campo com foco já está no estado antes de trocar de tela. */
@@ -602,12 +688,33 @@
     exportar: () => exportar(),
     importar: () => { arquivoImportar.value = ''; arquivoImportar.click(); },
     novo: () => {
-      if (!confirm('Iniciar um novo levantamento? O atual será apagado deste navegador. Exporte em JSON antes se quiser guardá-lo.')) return;
+      if (!confirm('Iniciar um novo levantamento? O atual continua salvo em “Levantamentos”.')) return;
       R.voz.parar();
-      A.backup(estado);
+      salvarPendencias();
+      sujo = true; salvarAgora(true);
+      A.guardar(estado).catch(() => {});
       estado = A.inicial();
-      sujo = true; salvarAgora();
+      visao = null;
+      sujo = true; salvarAgora(true);
+      marcarHistorico();
       render(true);
+      mostrarStatus('Novo levantamento iniciado. O anterior está em “Levantamentos”.');
+    },
+    lista: () => { menuAberto(false); salvarPendencias(); sujo = true; salvarAgora(true); visao = 'lista'; R.voz.parar(); render(true); },
+    'abrir-lev': (b) => abrirLevantamento(b.dataset.id),
+    'exportar-lev': (b) => A.abrir(b.dataset.id).then((e) => (e ? exportar(e) : alert('Levantamento não encontrado.'))),
+    'excluir-lev': (b) => {
+      if (!confirm('Excluir definitivamente o levantamento “' + (b.dataset.nome || 'sem nome') + '”, com relatório e anexos? Esta ação não pode ser desfeita. Exporte o JSON antes se quiser guardar uma cópia.')) return;
+      A.excluir(b.dataset.id).then(() => { mostrarStatus('Levantamento excluído.'); render(); }).catch(() => alert('Não foi possível excluir.'));
+    },
+    'remover-anexo': (b) => {
+      const i = estado.anexos.findIndex((a) => a.id === b.dataset.id);
+      if (i < 0 || !confirm('Remover o anexo “' + estado.anexos[i].nome + '”?')) return;
+      const id = estado.anexos[i].id;
+      estado.anexos.splice(i, 1);
+      sujo = true; agendarSalvar(); salvarAgora(true);
+      A.excluirArquivo(id).catch(() => {});
+      const y = window.scrollY; render(); window.scrollTo(0, y);
     }
   };
 
@@ -699,13 +806,24 @@
   }
 
   /* ================= Exportar / importar ================= */
-  function exportar() {
+  function blobParaDataURL(blob) {
+    return new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => falha(r.error); r.readAsDataURL(blob); });
+  }
+
+  /* Exporta o levantamento (o aberto ou outro da lista) com os arquivos anexados embutidos. */
+  async function exportar(alvo) {
     salvarPendencias();
-    salvarAgora();
-    const nome = (estado.cadastro.empresa || 'levantamento').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    salvarAgora(true);
+    const e = alvo || estado;
+    mostrarStatus('Preparando exportação…');
+    const arquivos = {};
+    for (const a of e.anexos || []) {
+      try { const b = await A.lerArquivo(a.id); if (b) arquivos[a.id] = await blobParaDataURL(b); } catch (err) { /* arquivo ausente */ }
+    }
+    const nome = (e.cadastro.empresa || 'levantamento').normalize('NFD').replace(/[̀-ͯ]/g, '')
       .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'levantamento';
     const data = new Date().toISOString().slice(0, 10);
-    const blob = new Blob([JSON.stringify(estado, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(Object.assign({}, e, { arquivos }), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -717,25 +835,48 @@
     mostrarStatus('Arquivo JSON exportado às ' + hora(new Date()));
   }
 
+  async function dataURLParaBlob(u) { return (await fetch(u)).blob(); }
+
+  /* Importa como levantamento da lista (não apaga o aberto). */
   arquivoImportar.addEventListener('change', () => {
     const arq = arquivoImportar.files && arquivoImportar.files[0];
     if (!arq) return;
     const leitor = new FileReader();
-    leitor.onload = () => {
-      let novo;
+    leitor.onload = async () => {
+      let bruto, novo;
       try {
-        novo = A.normalizar(JSON.parse(String(leitor.result)));
+        bruto = JSON.parse(String(leitor.result));
+        novo = A.normalizar(bruto);
       } catch (e) {
         alert('Não foi possível importar: ' + (e instanceof SyntaxError ? 'o arquivo não é um JSON válido.' : e.message));
         return;
       }
       const nome = novo.cadastro.empresa || 'sem nome';
-      if (!confirm('Importar o levantamento “' + nome + '”? Ele substitui o levantamento aberto neste navegador.')) return;
+      if (await A.existeNaLista(novo.meta.id) || novo.meta.id === estado.meta.id) {
+        if (!confirm('Já existe um levantamento salvo com este arquivo (“' + nome + '”).\n\nOK: substituir o salvo pela versão do arquivo.\nCancelar: importar como cópia separada.')) {
+          novo.meta.id = R.uid();
+        }
+      } else if (!confirm('Importar o levantamento “' + nome + '”? O levantamento aberto continua salvo em “Levantamentos”.')) {
+        return;
+      }
+      mostrarStatus('Importando…');
+      const arquivos = bruto && typeof bruto.arquivos === 'object' && bruto.arquivos ? bruto.arquivos : {};
+      for (const a of novo.anexos) {
+        const u = arquivos[a.id];
+        if (typeof u === 'string' && u.startsWith('data:')) {
+          try { await A.salvarArquivo(a.id, await dataURLParaBlob(u)); } catch (e) { /* sem espaço */ }
+        }
+      }
       R.voz.parar();
-      A.backup(estado);
+      salvarPendencias();
+      sujo = true; salvarAgora(true);
+      A.guardar(estado).catch(() => {});
       estado = novo;
+      estado.meta.atualizadoEm = new Date().toISOString();
+      visao = null;
       sujo = true;
-      salvarAgora();
+      salvarAgora(true);
+      marcarHistorico();
       render(true);
       mostrarStatus('Levantamento importado e salvo às ' + hora(new Date()));
     };
@@ -743,11 +884,173 @@
     leitor.readAsText(arq);
   });
 
+  /* ================= Levantamentos salvos ================= */
+  function abrirLevantamento(id) {
+    if (id === estado.meta.id) { visao = null; render(true); return; }
+    salvarPendencias();
+    sujo = true; salvarAgora(true);
+    A.guardar(estado).catch(() => {});
+    A.abrir(id).then((e) => {
+      if (!e) { alert('Levantamento não encontrado.'); return; }
+      R.voz.parar();
+      estado = e;
+      visao = null;
+      sujo = true; salvarAgora(true);
+      marcarHistorico();
+      render(true);
+      mostrarStatus('Levantamento “' + (e.cadastro.empresa || 'sem nome') + '” aberto.');
+    });
+  }
+
+  function dataCurta(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso.length === 10 ? iso + 'T12:00:00' : iso);
+    return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR');
+  }
+
+  function renderLevantamentos() {
+    principal.innerHTML = '<div class="pag-cab"><div><h1>Levantamentos salvos</h1><p class="pag-desc">Todos os levantamentos guardados neste aparelho, com relatório e anexos.</p></div>' +
+      '<div class="pag-cab-dir"><button type="button" class="btn btn-pri" data-acao="novo">Novo levantamento</button></div></div>' +
+      '<section class="painel" id="listaLev"><p class="texto-sec">Carregando…</p></section>';
+    A.listar(estado).then((l) => {
+      const alvo = document.getElementById('listaLev');
+      if (!alvo) return;
+      if (!l.length) { alvo.innerHTML = '<p class="vazio">Nenhum levantamento salvo.</p>'; return; }
+      alvo.innerHTML = '<table class="tabela-lev"><thead><tr><th>Empresa</th><th>Visita</th><th>Última alteração</th><th>Respostas</th><th>Relatório</th><th>Anexos</th><th></th></tr></thead><tbody>' +
+        l.map((x) => {
+          const aberto = x.id === estado.meta.id;
+          const nome = x.empresa || 'Empresa não informada';
+          return '<tr' + (aberto ? ' class="lev-aberto"' : '') + '>' +
+            '<td data-rot="Empresa"><strong>' + esc(nome) + '</strong>' + (x.fantasia ? '<br><span class="texto-sec">' + esc(x.fantasia) + '</span>' : '') + (aberto ? '<br><span class="lev-tag">Aberto agora</span>' : '') + '</td>' +
+            '<td data-rot="Visita">' + dataCurta(x.dataVisita) + '</td>' +
+            '<td data-rot="Última alteração">' + (x.atualizadoEm ? new Date(x.atualizadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td>' +
+            '<td data-rot="Respostas">' + x.respondidas + '</td>' +
+            '<td data-rot="Relatório">' + (x.relatorio ? 'Gerado em ' + dataCurta(x.relatorio) : 'Não gerado') + '</td>' +
+            '<td data-rot="Anexos">' + x.anexos + '</td>' +
+            '<td class="lev-acoes"><button type="button" class="btn btn-sec" data-acao="abrir-lev" data-id="' + x.id + '">' + (aberto ? 'Continuar' : 'Abrir') + '</button>' +
+            '<button type="button" class="btn-link" data-acao="exportar-lev" data-id="' + x.id + '">Exportar</button>' +
+            (aberto ? '' : '<button type="button" class="btn-link lev-excluir" data-acao="excluir-lev" data-id="' + x.id + '" data-nome="' + esc(nome) + '">Excluir</button>') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    });
+  }
+
+  /* ================= Fotos e documentos ================= */
+  const TAM_MAX = 30 * 1024 * 1024;
+  let urlsAnexos = [];
+
+  function tamanhoTxt(n) {
+    n = Number(n) || 0;
+    return n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  }
+  const ehImagem = (a) => /^image\//.test(a.tipo || '');
+  function extensao(nome) { const m = /\.([a-z0-9]{1,5})$/i.exec(nome || ''); return m ? m[1].toUpperCase() : 'ARQ'; }
+
+  function renderAnexos(etapaId) {
+    const lista = estado.anexos.filter((a) => a.etapa === etapaId);
+    return '<section class="painel anexos-painel"><h2 class="painel-tit">Fotos e documentos <span class="painel-cont">' + lista.length + '</span></h2>' +
+      '<p class="texto-sec">Fotos da visita, planilhas, documentos e outros arquivos que ajudem a entender o processo. Ficam guardados neste aparelho junto com o levantamento.</p>' +
+      (lista.length ? '<div class="anexos-lista">' + lista.map((a) =>
+        '<div class="anexo">' +
+        '<div class="anexo-previa">' + (ehImagem(a) ? '<img alt="" data-anexo-img="' + a.id + '">' : '<span class="anexo-ext">' + esc(extensao(a.nome)) + '</span>') + '</div>' +
+        '<div class="anexo-info"><span class="anexo-nome">' + esc(a.nome) + '</span><span class="texto-sec">' + tamanhoTxt(a.tamanho) + ' · ' + dataCurta(a.criadoEm) + '</span>' +
+        '<input type="text" aria-label="Descrição do anexo" placeholder="Descrição: o que mostra e por que ajuda" data-path="anexos.#' + a.id + '.descricao" value="' + esc(a.descricao) + '"></div>' +
+        '<div class="anexo-btns"><a class="btn-link" data-anexo-link="' + a.id + '" target="_blank" rel="noopener" download="' + esc(a.nome) + '">Abrir</a>' +
+        '<button type="button" class="btn-link" data-acao="remover-anexo" data-id="' + a.id + '">Remover</button></div></div>').join('') + '</div>' : '') +
+      '<div class="anexos-acoes">' +
+      '<label class="btn btn-sec">Tirar foto<input class="arquivo-oculto" type="file" accept="image/*" capture="environment" data-anexar="' + etapaId + '"></label>' +
+      '<label class="btn btn-sec">Anexar arquivo<input class="arquivo-oculto" type="file" multiple data-anexar="' + etapaId + '"></label>' +
+      '</div></section>';
+  }
+
+  /* Carrega miniaturas e links dos anexos visíveis. */
+  function carregarAnexosVisiveis() {
+    urlsAnexos.forEach((u) => URL.revokeObjectURL(u));
+    urlsAnexos = [];
+    const ids = new Set();
+    principal.querySelectorAll('[data-anexo-img],[data-anexo-link]').forEach((el) => ids.add(el.dataset.anexoImg || el.dataset.anexoLink));
+    ids.forEach((id) => {
+      A.lerArquivo(id).then((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        urlsAnexos.push(url);
+        principal.querySelectorAll('[data-anexo-img="' + id + '"]').forEach((img) => { img.src = url; });
+        principal.querySelectorAll('[data-anexo-link="' + id + '"]').forEach((a) => { a.href = url; });
+      }).catch(() => {});
+    });
+  }
+
+  /* Reduz fotos grandes da câmera (até 1600 px, JPEG) para economizar espaço. */
+  async function reduzirImagem(arq) {
+    if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(arq.type) || !window.createImageBitmap) return arq;
+    try {
+      const bmp = await createImageBitmap(arq, { imageOrientation: 'from-image' });
+      const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      if (k === 1 && arq.size < 1500000) return arq;
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * k);
+      c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.85));
+      if (!blob || blob.size >= arq.size) return arq;
+      return new File([blob], (arq.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      return arq;
+    }
+  }
+
+  async function anexarArquivos(input) {
+    const arquivos = Array.from(input.files || []);
+    input.value = '';
+    if (!arquivos.length) return;
+    const etapa = input.dataset.anexar;
+    let falhas = 0;
+    for (const original of arquivos) {
+      if (original.size > TAM_MAX) { alert('“' + original.name + '” tem mais de 30 MB e não foi anexado.'); continue; }
+      mostrarStatus('Anexando ' + original.name + '…');
+      const arq = await reduzirImagem(original);
+      const id = R.uid();
+      try {
+        await A.salvarArquivo(id, arq);
+      } catch (e) {
+        falhas++;
+        continue;
+      }
+      const nome = original.name && !/^image\.(jpg|jpeg)$/i.test(original.name) ? (arq.name || original.name) : 'Foto ' + new Date().toLocaleString('pt-BR').replace(/[/:]/g, '-') + '.jpg';
+      estado.anexos.push({ id, etapa, nome, tipo: arq.type || original.type || 'application/octet-stream', tamanho: String(arq.size), descricao: '', criadoEm: new Date().toISOString() });
+    }
+    marcarRespostaAlterada('anexos');
+    sujo = true; agendarSalvar(); salvarAgora(true);
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    if (falhas) mostrarStatus('Não foi possível guardar ' + falhas + ' arquivo(s): espaço do navegador insuficiente.', true);
+  }
+
   /* ================= Início ================= */
+  marcarHistorico();
   render();
-  if (R.erroCarregar) {
+  if (R.erroCarregar && R.recuperadoDe === 'anterior') {
+    mostrarStatus('A cópia principal estava ilegível; o levantamento foi recuperado da versão anterior salva.', true);
+  } else if (R.erroCarregar) {
     mostrarStatus('Os dados salvos neste navegador estavam ilegíveis. Uma cópia foi preservada e um levantamento vazio foi aberto.', true);
   } else if (A.existeSalvo()) {
     mostrarStatus('Levantamento recuperado. Última alteração às ' + hora(new Date(estado.meta.atualizadoEm)));
+  }
+  if (!navigator.onLine) mostrarStatus('Sem internet. O preenchimento continua sendo salvo neste aparelho.', true);
+
+  /* Se o espelho no IndexedDB ou a versão anterior forem mais recentes (armazenamento cheio ou apagado), recupera. */
+  A.recuperarMaisRecente(estado, A.existeSalvo()).then((c) => {
+    if (!c || sujo) return;
+    estado = c.estado;
+    baseSalva = (A.marca() || {}).em || '';
+    sujo = true;
+    salvarAgora(true);
+    marcarHistorico();
+    render();
+    mostrarStatus('Levantamento recuperado da cópia de segurança do navegador (' + (c.origem === 'espelho' ? 'IndexedDB' : 'versão anterior') + ').', true);
+  });
+  A.pedirPersistencia();
+
+  /* Funcionamento sem internet quando publicado (não se aplica ao abrir o arquivo direto). */
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   }
 })();

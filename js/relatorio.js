@@ -366,6 +366,7 @@
       }
       if (itens.length) anexo.grupos.push(G(e.titulo, itens));
     });
+    if ((E.anexos || []).length) anexo.grupos.push(G('Fotos e documentos', [], { tipo: 'anexos' }));
 
     return {
       versao: 2,

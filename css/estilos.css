@@ -185,6 +185,34 @@ input[type="checkbox"] { width: 16px; height: 16px; border-radius: 2px; accent-c
 .pessoas-cab, .pessoas-linha { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)) 80px; gap: 8px; align-items: center; }
 .pessoas-cab span { font-size: 14px; font-weight: 600; }
 
+/* ---------- Fotos e documentos ---------- */
+.arquivo-oculto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.anexos-acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.anexos-acoes .btn { position: relative; }
+.anexos-lista { display: grid; gap: 10px; margin-top: 12px; }
+.anexo { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--borda); border-radius: var(--raio); }
+.anexo-previa { width: 64px; height: 64px; border-radius: var(--raio); background: var(--fundo); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.anexo-previa img { width: 100%; height: 100%; object-fit: cover; }
+.anexo-ext { font-size: 13px; font-weight: 700; color: var(--marinho); }
+.anexo-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.anexo-nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anexo-btns { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.anexo-btns a.btn-link { text-decoration: none; }
+.anexos-rel { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.anexo-rel { margin: 0; font-size: 14px; }
+.anexo-rel img { display: block; width: 100%; max-height: 260px; object-fit: contain; background: var(--fundo); border-radius: var(--raio); margin-bottom: 6px; }
+
+/* ---------- Levantamentos salvos ---------- */
+.tabela-lev { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tabela-lev th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borda); white-space: nowrap; }
+.tabela-lev td { padding: 10px; border-bottom: 1px solid var(--borda-2); vertical-align: middle; }
+.tabela-lev tbody tr:nth-child(even) { background: rgb(14 42 71 / 0.04); }
+.tabela-lev tbody tr:hover { background: var(--azul-claro); }
+.lev-tag { font-size: 12.5px; font-weight: 600; color: var(--azul); }
+.lev-acoes { white-space: nowrap; text-align: right; }
+.lev-acoes .btn { height: 32px; margin-right: 4px; }
+.lev-excluir { color: var(--erro); }
+
 /* ---------- Diálogo ---------- */
 .dialogo { border: 0; border-radius: var(--raio); padding: 24px; max-width: 520px; width: calc(100% - 32px); box-shadow: 0 8px 32px rgb(14 42 71 / 0.25); color: var(--texto); }
 .dialogo::backdrop { background: rgb(14 42 71 / 0.45); }
@@ -335,7 +363,14 @@ input[type="checkbox"] { width: 16px; height: 16px; border-radius: 2px; accent-c
   .diagrama { -webkit-overflow-scrolling: touch; }
   .diagrama svg { max-width: none !important; min-width: 560px; margin: 0; }
   .validacao-status { min-width: 0; flex: 1; }
-  .tabela-aprov thead { display: none; }
+  .tabela-aprov thead, .tabela-lev thead { display: none; }
+  .tabela-lev tr { display: block; padding: 10px 0; border-bottom: 1px solid var(--borda-2); }
+  .tabela-lev td { display: flex; gap: 8px; border: 0; padding: 2px 0; }
+  .tabela-lev td[data-rot]::before { content: attr(data-rot); min-width: 120px; color: var(--texto-2); font-size: 13px; }
+  .lev-acoes { text-align: left; padding-top: 8px !important; }
+  .anexo { grid-template-columns: 56px minmax(0, 1fr); }
+  .anexo-previa { width: 56px; height: 56px; }
+  .anexo-btns { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; gap: 12px; }
   .tabela-aprov tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--borda-2); }
   .tabela-aprov td { display: block; border: 0; padding: 2px 0; }
 }
@@ -362,6 +397,8 @@ input[type="checkbox"] { width: 16px; height: 16px; border-radius: 2px; accent-c
   .validacao { background: none; }
   .validacao-com:placeholder-shown { display: none; }
   .sumario { background: none; padding: 0; }
+  .anexo-rel { break-inside: avoid; }
+  .anexo-rel img { max-height: 70mm; }
   .item-texto:hover { background: none; }
   .item-texto:empty { display: none; }
   .rot-origem { color: var(--marinho); }
