@@ -1,0 +1,473 @@
+/*
+ * Requisio — motor de análise.
+ * Lê as respostas e monta um modelo estruturado: respostas classificadas, departamentos,
+ * fatos atribuídos, problemas com causa e impacto, padrões de solução, requisitos e pendências.
+ *
+ * Regras de origem:
+ *   cliente      = texto informado pelo cliente (sem acréscimos)
+ *   pendente     = resposta ausente, vaga, desconhecida ou marcada para confirmar
+ *   inferencia   = conclusão do sistema a partir das respostas (mostra a evidência)
+ *   recomendacao = proposta técnica do sistema (precisa de validação)
+ * Nada é tratado como aprovado: aprovação é sempre manual.
+ */
+(function () {
+  'use strict';
+  const R = (window.Requisio = window.Requisio || {});
+
+  const t = (s) => (typeof s === 'string' ? s.trim() : '');
+  /* Minúsculas e sem acento, com o mesmo comprimento do original. */
+  function norm(s) {
+    return String(s || '').split('').map((c) => (c.normalize('NFD')[0] || c).toLowerCase()[0] || c).join('');
+  }
+  const slug = (s) => norm(t(s)).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'geral';
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  /* Divide uma resposta em frases ou linhas, sem marcadores de lista. */
+  function frases(s) {
+    return t(s).replace(/([.!?;])\s+/g, '$1\n').split(/\n+/)
+      .map((x) => x.replace(/^\s*(?:[-*•·–]|\d{1,2}[.)-])\s+/, '').trim()).filter(Boolean);
+  }
+
+  /* ---------- Classificação das respostas ---------- */
+  const NEG = /^(nao|nenhum|nenhuma|nada|sem|nunca|inexistente)\b/;
+  const DESC = /^(nao sei|nao lembro|nao tenho certeza|talvez|a definir|depende|sei la|desconhec)/;
+  const VAGO = /^(sim|bastante|varios|varias|muitos|muitas|todos|todas|alguns|algumas|normal|ok)\b/;
+
+  function classificar(texto, descritiva) {
+    const n = norm(t(texto)).replace(/[.!,;]+$/, '').trim();
+    if (!n) return 'vazia';
+    if (DESC.test(n)) return 'desconhecida';
+    const palavras = n.split(/\s+/).filter(Boolean);
+    if (NEG.test(n) && palavras.length <= 4 && !/\d/.test(n) && !/apenas|somente|\bso\b|exceto|\bmas\b/.test(n)) return 'negativa';
+    if (/\d/.test(n)) return 'informativa';
+    if (VAGO.test(n) && palavras.length <= 3) return 'vaga';
+    if (descritiva && palavras.length < 4) return 'vaga';
+    return 'informativa';
+  }
+
+  /* Termo negado no texto? ("não usamos planilha"), mas "nenhum, apenas o Excel" não é negação. */
+  function negado(n, idx) {
+    const antes = n.slice(Math.max(0, idx - 30), idx);
+    const m = /\b(nao|nem|sem|nenhum|nenhuma)\b([^.,;!?]*)$/.exec(antes);
+    if (!m) return false;
+    return !/apenas|somente|\bso\b|exceto|alem/.test(m[2]);
+  }
+
+  function achar(re, n) {
+    const g = new RegExp(re.source, 'g');
+    let m;
+    while ((m = g.exec(n))) { if (!negado(n, m.index)) return m; if (!m[0].length) g.lastIndex++; }
+    return null;
+  }
+
+  /* ---------- Catálogo de departamentos (nome explícito e tema) ---------- */
+  const CATALOGO = [
+    { nome: 'Financeiro', nomeRe: /financeir|financas|tesouraria|contas a (pagar|receber)/, temaRe: /pagament|\bpix\b|fluxo de caixa|cobranc|faturament|boleto|\bbancos?\b/ },
+    { nome: 'RH', nomeRe: /\brh\b|recursos humanos|departamento pessoal|gestao de pessoas/, temaRe: /contrat\w* (de )?(funcionari|colaborador|pessoa)|admiss|demiss|\bclt\b|avulso|folha de pagamento|ponto eletronico/ },
+    { nome: 'Compras', nomeRe: /\bcompras?\b|suprimentos/, temaRe: /fornecedor|cotac|pedido de compra|aquisic/ },
+    { nome: 'Administrativo', nomeRe: /administrativ|administrac|admintrac|\badmin\b|\badm\b/, temaRe: /arquivo de documentos|protocolo/ },
+    { nome: 'Comercial', nomeRe: /comercial|\bvendas\b/, temaRe: /vendedor|proposta comercial|carteira de clientes/ },
+    { nome: 'Operacional', nomeRe: /\boperacional\b|setor de operacoes|area de operacoes|\bproducao\b/, temaRe: /ordem de servico|execucao do servico|equipe de campo|canteiro/ },
+    { nome: 'Licitações', nomeRe: /licitac/, temaRe: /edital|pregao|empenho|contrato publico/ },
+    { nome: 'Estoque e logística', nomeRe: /estoque|almoxarifado|logistica|expedicao/, temaRe: /inventario|frete|entrega de material/ },
+    { nome: 'Fiscal e contábil', nomeRe: /\bfiscal\b|contabil|contabilidade/, temaRe: /nota fiscal|nf-?e|imposto|tribut/ },
+    { nome: 'TI', nomeRe: /\bti\b|tecnologia da informacao|informatica/, temaRe: /servidor|suporte tecnico/ }
+  ];
+
+  /* ---------- Padrões de problema e solução ----------
+     Cada padrão exige contexto (não basta uma palavra solta) e ignora frases negadas. */
+  const PADROES = [
+    {
+      id: 'pagamentos', dept: 'Financeiro', titulo: 'Pagamentos executados manualmente',
+      detectar: (n) => achar(/pagament|\bpix\b|transferenc/, n) && achar(/manual|um por um|uma a uma|um a um|via mao|a mao|nao (esta )?automatizad|app d[oa]s? bancos?|aplicativo do banco|individualmente/, n),
+      causa: 'Cada pagamento é feito individualmente no aplicativo do banco, sem lote e sem integração.',
+      impacto: 'O tempo gasto cresce com o volume de pagamentos; há risco de pagamento duplicado, esquecido ou com valor errado, e a conferência do que foi pago é manual.',
+      objetivo: 'Pagar em lote, com aprovação registrada antes do envio e conferência automática do retorno do banco.',
+      solucao: 'Montar lotes de pagamento a partir do cadastro de beneficiários e enviá-los ao banco por integração (API ou arquivo de remessa, conforme o que o banco oferecer), com aprovação antes do envio e conciliação do retorno.',
+      tobe: [['Financeiro', 'Registra ou importa os pagamentos do período'], ['Sistema', 'Valida beneficiários, chaves PIX e valores'], ['Aprovador', 'Aprova o lote'], ['Sistema', 'Envia o lote ao banco'], ['Banco', 'Processa e devolve o retorno'], ['Sistema', 'Concilia pagos e rejeitados e avisa pendências']],
+      funcionalidades: [['Cadastro de beneficiários com chave PIX', 'padrao'], ['Montagem de lote de pagamentos', 'especifica'], ['Aprovação do lote antes do envio', 'especifica'], ['Integração bancária para envio de PIX em lote', 'integracao'], ['Conciliação do retorno bancário', 'integracao'], ['Relatório de pagamentos por período e empresa', 'padrao']],
+      entidades: [['Beneficiario', ['nome', 'documento', 'chavePix']], ['LotePagamento', ['periodo', 'situacao', 'valorTotal']], ['Pagamento', ['valor', 'situacao', 'dataPagamento']], ['Aprovacao', ['aprovador', 'data', 'decisao']], ['RetornoBancario', ['data', 'situacao', 'motivo']]],
+      relacoes: [['LotePagamento', '1', '*', 'Pagamento'], ['Beneficiario', '1', '*', 'Pagamento'], ['LotePagamento', '1', '1', 'Aprovacao'], ['Pagamento', '1', '0..1', 'RetornoBancario']],
+      integracoes: ['Banco: envio de PIX em lote e retorno dos pagamentos (meio técnico a confirmar com a instituição)'],
+      sequencia: ['Financeiro', 'Sistema', 'Aprovador', 'Banco'],
+      atores: [['Financeiro', 'cadastra beneficiários, monta e envia lotes, consulta retornos'], ['Aprovador', 'aprova ou devolve lotes; não edita valores']],
+      criterios: (ctx) => [
+        'Um lote' + (ctx.volume ? ' com ' + ctx.volume : '') + ' é criado e enviado ao banco sem digitar cada pagamento no aplicativo.',
+        'Nenhum lote é enviado sem aprovação registrada.',
+        'Pagamentos rejeitados pelo banco aparecem com o motivo, para correção e reenvio.',
+        'O relatório do período mostra o total pago por beneficiário.'
+      ],
+      riscos: ['Depende de o banco oferecer API ou arquivo de remessa para PIX em lote e do contrato com o banco.', 'As chaves PIX dos beneficiários precisam ser coletadas e validadas antes do primeiro lote.'],
+      perguntas: ['Quem aprova os pagamentos e há limite de valor por aprovador?', 'Qual banco é usado e se ele oferece API ou arquivo de remessa para PIX.', 'Quantos pagamentos são feitos por semana (confirmar o volume real).']
+    },
+    {
+      id: 'planilha', titulo: 'Controles mantidos em planilhas',
+      detectar: (n) => achar(/planilha|excel|google sheets/, n),
+      causa: 'As informações são controladas em planilhas, sem base única nem histórico de alterações.',
+      impacto: 'Há versões diferentes do mesmo dado, consolidação manual para decidir e risco de perda ou erro de fórmula.',
+      objetivo: 'Registrar as informações em base única, com validação e histórico.',
+      solucao: 'Substituir as planilhas de controle por cadastros e registros na solução, com validação de campos, histórico e relatórios; importar as planilhas atuais.',
+      tobe: [['Usuário do departamento', 'Registra a informação no momento em que ela ocorre'], ['Sistema', 'Valida campos obrigatórios e duplicidades'], ['Usuário do departamento', 'Consulta e filtra pelo histórico'], ['Sistema', 'Emite relatórios sem consolidação manual']],
+      funcionalidades: [['Cadastros e registros do departamento em base única', 'padrao'], ['Histórico de alterações', 'padrao'], ['Importação das planilhas atuais', 'especifica'], ['Relatórios e consultas', 'padrao']],
+      entidades: [], relacoes: [], integracoes: [],
+      atores: [['Usuário do departamento', 'registra e consulta as informações da área']],
+      criterios: () => ['As informações hoje em planilha são registradas e consultadas na solução, com histórico de quem alterou.', 'As planilhas atuais são importadas sem redigitação.'],
+      riscos: ['Planilhas com formatos diferentes exigem padronização antes da importação.'],
+      perguntas: ['Quais planilhas existem, quem as mantém e quais colunas têm.']
+    },
+    {
+      id: 'mensagens', titulo: 'Solicitações e informações trocadas por mensagens',
+      detectar: (n) => achar(/whatsapp|\bzap\b|telefone|ligac|e-?mail|mensage/, n),
+      causa: 'Pedidos e informações circulam por mensagens, sem registro estruturado.',
+      impacto: 'Solicitações se perdem, não há rastreabilidade e as áreas esperam umas pelas outras sem saber a situação.',
+      objetivo: 'Registrar as solicitações entre áreas com responsável, situação, prazo e histórico.',
+      solucao: 'Fluxo de solicitações entre departamentos, com responsável, situação, prazo, histórico e avisos automáticos.',
+      tobe: [['Solicitante', 'Abre a solicitação para o departamento responsável'], ['Sistema', 'Avisa o responsável'], ['Responsável', 'Atende e atualiza a situação'], ['Sistema', 'Avisa o solicitante e registra o histórico']],
+      funcionalidades: [['Abertura de solicitação entre departamentos', 'padrao'], ['Acompanhamento de situação e prazo', 'padrao'], ['Avisos automáticos ao responsável e ao solicitante', 'padrao'], ['Histórico da solicitação', 'padrao']],
+      entidades: [['Solicitacao', ['assunto', 'situacao', 'prazo']], ['Departamento', ['nome']], ['Usuario', ['nome', 'perfil']]],
+      relacoes: [['Departamento', '1', '*', 'Solicitacao'], ['Usuario', '1', '*', 'Solicitacao']],
+      integracoes: [],
+      atores: [['Solicitante', 'abre e acompanha solicitações'], ['Responsável do departamento', 'atende e atualiza solicitações']],
+      criterios: () => ['Toda solicitação entre áreas tem responsável, situação e data, e pode ser consultada depois.'],
+      riscos: ['A adesão depende de a equipe deixar de usar mensagens para pedidos formais.'],
+      perguntas: ['Quais pedidos entre áreas são mais frequentes hoje por mensagem.']
+    },
+    {
+      id: 'centralizacao', titulo: 'Informação descentralizada',
+      detectar: (n) => achar(/centraliz|um (so |unico )?(local|lugar)|em um (so |unico )?sistema|dispers|espalhad/, n),
+      causa: 'Os dados estão em vários lugares, sem fonte única.',
+      impacto: 'Decisões demoram e há retrabalho para reunir informações.',
+      objetivo: 'Concentrar as informações dos departamentos em uma base única.',
+      solucao: 'Base única de dados para os departamentos, com painel de indicadores e consultas consolidadas.',
+      tobe: [['Departamentos', 'Registram suas informações na mesma base'], ['Gestão', 'Consulta o painel consolidado']],
+      funcionalidades: [['Painel de indicadores por departamento', 'padrao'], ['Consultas consolidadas entre departamentos', 'padrao']],
+      entidades: [], relacoes: [], integracoes: [],
+      atores: [['Gestão', 'consulta painéis e relatórios consolidados']],
+      criterios: () => ['A gestão consulta os números dos departamentos em um único painel, sem pedir planilhas às áreas.'],
+      riscos: [], perguntas: ['Quais informações a gestão mais precisa consultar e com que frequência.']
+    },
+    {
+      id: 'fluxo_caixa', dept: 'Financeiro', objetivo_: true, titulo: 'Objetivo de melhorar o fluxo de caixa',
+      detectar: (n) => achar(/fluxo de caixa/, n),
+      causa: 'Não há visão estruturada de entradas e saídas previstas.',
+      impacto: 'Dificulta prever falta de caixa e planejar pagamentos.',
+      objetivo: 'Dar visão de fluxo de caixa previsto e realizado.',
+      solucao: 'Registro de contas a pagar e a receber com fluxo de caixa previsto e realizado por empresa.',
+      tobe: [['Financeiro', 'Registra contas a pagar e a receber'], ['Sistema', 'Projeta o fluxo de caixa'], ['Gestão', 'Acompanha previsto e realizado']],
+      funcionalidades: [['Contas a pagar e a receber', 'padrao'], ['Fluxo de caixa previsto e realizado', 'padrao']],
+      entidades: [['ContaPagar', ['vencimento', 'valor', 'situacao']], ['ContaReceber', ['vencimento', 'valor', 'situacao']]],
+      relacoes: [], integracoes: [],
+      atores: [['Financeiro', 'registra contas e acompanha o caixa']],
+      criterios: () => ['O fluxo de caixa dos próximos 30 dias é consultado a partir das contas registradas.'],
+      riscos: [], perguntas: ['Como o fluxo de caixa é acompanhado hoje e por qual período.']
+    },
+    {
+      id: 'contratacao', dept: 'RH', titulo: 'Contratação de colaboradores CLT e avulsos',
+      detectar: (n) => achar(/contrat\w*\s+(de\s+)?(funcionari|colaborador|pessoa)|admiss|\bclt\b|avulso/, n),
+      causa: 'O cadastro e a contratação de colaboradores não estão estruturados em sistema.',
+      impacto: 'Os dados de quem deve ser pago dependem de controles paralelos.',
+      objetivo: 'Registrar colaboradores CLT e avulsos em cadastro único, usado também pelos pagamentos.',
+      solucao: 'Cadastro de colaboradores por tipo de vínculo (CLT e avulso), com documentos e situação, servindo de base aos pagamentos.',
+      tobe: [['RH', 'Cadastra o colaborador e o tipo de vínculo'], ['Sistema', 'Valida dados e documentos'], ['Financeiro', 'Usa o cadastro para montar os pagamentos']],
+      funcionalidades: [['Cadastro de colaboradores por tipo de vínculo (CLT e avulso)', 'padrao'], ['Registro de contratação e documentos', 'especifica']],
+      entidades: [['Colaborador', ['nome', 'documento', 'tipoVinculo']], ['Contratacao', ['inicio', 'fim', 'situacao']]],
+      relacoes: [['Colaborador', '1', '*', 'Contratacao']],
+      integracoes: [],
+      atores: [['RH', 'cadastra colaboradores e contratações']],
+      criterios: () => ['Um colaborador avulso ou CLT é cadastrado uma vez e aparece disponível para pagamento.'],
+      riscos: ['Contratação CLT envolve obrigações trabalhistas (folha, eSocial) que podem exigir sistema especializado.'],
+      perguntas: ['O que precisa ser registrado na contratação de avulsos e de CLT.', 'A folha de pagamento CLT é feita por contabilidade externa?']
+    }
+  ];
+
+  const QUANT = /(\d[\d.]*)\s+(pix|pagamentos?|pessoas|funcionarios|colaboradores|transferencias)\b(?:[^.\n]{0,30}?\b(?:por|na|ao|toda|cada)\s+(semana|mes|dia|quinzena))?/g;
+
+  function analisar(E) {
+    const P = R.PERGUNTAS;
+    const c = E.cadastro;
+    const resp = (id) => t(E.respostas[id] && E.respostas[id].texto);
+    const flag = (id) => !!(E.respostas[id] && E.respostas[id].confirmar);
+    const fonteQ = (id) => P[id].etapa.titulo + ' › ' + P[id].q;
+
+    /* ---------- 1. Respostas classificadas ---------- */
+    const respostas = [];
+    R.ETAPAS.filter((e) => e.perguntas).forEach((e) => e.perguntas.forEach((p) => {
+      const texto = resp(p.id);
+      respostas.push({ id: p.id, etapa: e.titulo, etapaId: e.id, pergunta: p.q, texto, fonte: fonteQ(p.id), pendente: flag(p.id), classe: classificar(texto, p.descritiva) });
+    }));
+    Object.keys(E.extras || {}).forEach((eid) => (E.extras[eid] || []).forEach((x) => {
+      if (!t(x.pergunta) && !t(x.resposta)) return;
+      const et = R.ETAPAS.find((e) => e.id === eid);
+      respostas.push({ id: 'x_' + x.id, etapa: et ? et.titulo : 'Complementar', etapaId: eid, pergunta: t(x.pergunta) || 'Pergunta complementar', texto: t(x.resposta), fonte: 'Pergunta complementar › ' + (t(x.pergunta) || 'sem título'), pendente: !!x.confirmar, classe: classificar(x.resposta, true) });
+    }));
+    const porId = {};
+    respostas.forEach((r) => { porId[r.id] = r; });
+    const info = (id) => (porId[id] && porId[id].classe === 'informativa' ? porId[id] : null);
+
+    /* ---------- 2. Departamentos ---------- */
+    const deps = [];
+    const porChave = {};
+    function registrarDep(nome, origem, extra) {
+      const nn = norm(t(nome));
+      if (!nn) return null;
+      const cat = CATALOGO.find((k) => k.nomeRe.test(nn));
+      const chave = slug(cat ? cat.nome : nome);
+      if (porChave[chave]) {
+        const d = porChave[chave];
+        if (origem === 'cadastrado' && d.origem !== 'cadastrado') { d.origem = 'cadastrado'; d.nome = t(nome); }
+        if (extra) Object.assign(d, extra);
+        return d;
+      }
+      const d = Object.assign({
+        chave, nome: cat && origem !== 'cadastrado' ? cat.nome : t(nome).replace(/^./, (x) => x.toUpperCase()),
+        origem, cat: cat || { nome: t(nome), nomeRe: new RegExp(escRe(nn)), temaRe: null },
+        dados: null, responsaveis: [], fatos: [], problemas: [], processos: [], padroes: {}, requisitos: [], regras: [], prioridades: [], pendencias: []
+      }, extra || {});
+      deps.push(d);
+      porChave[chave] = d;
+      return d;
+    }
+    E.departamentos.filter((d) => t(d.nome)).forEach((d) => registrarDep(d.nome, 'cadastrado', { dados: d }));
+    const organo = resp('org_organograma');
+    if (organo && classificar(organo) !== 'negativa') {
+      norm(organo).split(/,|;|\n|\be\b|\/|\(|\)/).map((x) => x.trim()).filter((x) => x && x.split(/\s+/).length <= 3)
+        .forEach((tok) => {
+          const ini = norm(organo).indexOf(tok);
+          registrarDep(ini >= 0 ? organo.substr(ini, tok.length) : tok, 'citado');
+        });
+    }
+    E.processos.forEach((p) => { if (t(p.departamento)) registrarDep(p.departamento, 'citado'); });
+
+    /* Departamentos citados por nome em qualquer resposta */
+    respostas.filter((r) => r.classe !== 'vazia').forEach((r) => {
+      const n = norm(r.texto);
+      CATALOGO.forEach((k) => { if (achar(k.nomeRe, n)) registrarDep(k.nome, 'citado'); });
+    });
+
+    function depsDoTexto(texto) {
+      const n = norm(texto);
+      const porNome = deps.filter((d) => achar(d.cat.nomeRe, n));
+      if (porNome.length) return { lista: porNome, modo: 'nome' };
+      let melhor = 0, escolhidos = [];
+      deps.forEach((d) => {
+        if (!d.cat.temaRe) return;
+        const g = new RegExp(d.cat.temaRe.source, 'g');
+        let cont = 0, m;
+        while ((m = g.exec(n))) { if (!negado(n, m.index)) cont++; if (!m[0].length) g.lastIndex++; }
+        if (cont > melhor) { melhor = cont; escolhidos = [d]; } else if (cont && cont === melhor) escolhidos.push(d);
+      });
+      return { lista: escolhidos, modo: escolhidos.length ? 'tema' : '' };
+    }
+
+    /* ---------- 3. Fatos atribuídos ---------- */
+    const geral = { fatos: [], problemas: [] };
+    const interdep = [];
+    const INTERDEP_Q = ['dep_integracao', 'org_comunicacao'];
+    function addFato(texto, fonte, pendente, destinoDep, ehProblema, qid) {
+      const rot = qid && R.PERGUNTAS[qid] ? R.PERGUNTAS[qid].curto : '';
+      const fato = { texto: rot ? rot + ': ' + texto : texto, original: texto, fonte, pendente, modo: destinoDep ? 'nome' : '', qid };
+      let alvos = destinoDep ? [destinoDep] : [];
+      if (!alvos.length) { const r = depsDoTexto(texto); alvos = r.lista; fato.modo = r.modo; }
+      if (!alvos.length) { geral.fatos.push(fato); if (ehProblema) geral.problemas.push(fato); return fato; }
+      alvos.forEach((d) => { d.fatos.push(fato); if (ehProblema) d.problemas.push(fato); });
+      if (alvos.length >= 2 && fato.modo === 'nome' && INTERDEP_Q.includes(qid)) interdep.push({ texto: fato.texto, fonte, deps: alvos.map((d) => d.nome) });
+      fato.deps = alvos;
+      return fato;
+    }
+
+    const PROBLEMA_Q = ['emp_motivacao', 'pro_criticos', 'prb_principais', 'prb_gargalos', 'prb_retrabalho', 'prb_erros', 'prb_informacao', 'org_comunicacao', 'dep_integracao', 'sis_satisfacao'];
+    const CONTEXTO_Q = ['emp_atividade', 'emp_objetivos', 'org_decisao', 'org_terceiros', 'sis_planilhas', 'sis_lista', 'prb_tentativas'];
+    PROBLEMA_Q.concat(CONTEXTO_Q).forEach((id) => {
+      const r = info(id);
+      if (!r) return;
+      frases(r.texto).forEach((f) => addFato(f, r.fonte, r.pendente, null, PROBLEMA_Q.includes(id), id));
+    });
+    respostas.filter((r) => r.id.startsWith('x_') && r.classe === 'informativa')
+      .forEach((r) => frases(r.texto).forEach((f) => addFato(f, r.fonte, r.pendente, null, r.etapaId === 'prb')));
+
+    E.departamentos.filter((d) => t(d.nome)).forEach((dd) => {
+      const d = porChave[slug(CATALOGO.find((k) => k.nomeRe.test(norm(dd.nome))) ? CATALOGO.find((k) => k.nomeRe.test(norm(dd.nome))).nome : dd.nome)];
+      if (!d) return;
+      if (t(dd.responsavel)) d.responsaveis.push({ texto: 'Responsável: ' + t(dd.responsavel), pendente: !!dd.responsavel__confirmar });
+      if (t(dd.pessoas)) d.fatos.push({ texto: 'Número de pessoas: ' + t(dd.pessoas), fonte: 'Departamentos › ' + d.nome, pendente: !!dd.pessoas__confirmar, modo: 'nome' });
+      [['atividades', 'Atividades'], ['entradas', 'Recebe e entrega'], ['ferramentas', 'Ferramentas'], ['dificuldades', 'Dificuldades']].forEach(([k, rot]) => {
+        if (!t(dd[k])) return;
+        const cls = classificar(dd[k], k === 'atividades' || k === 'dificuldades');
+        const fato = { texto: rot + ': ' + t(dd[k]), fonte: 'Departamentos › ' + d.nome, pendente: !!dd[k + '__confirmar'] || cls === 'vaga', modo: 'nome', campo: k };
+        d.fatos.push(fato);
+        if (k === 'dificuldades') d.problemas.push(fato);
+      });
+    });
+
+    c.entrevistados.filter((p) => t(p.nome) && t(p.departamento)).forEach((p) => {
+      const r = depsDoTexto(p.departamento);
+      const d = r.modo === 'nome' ? r.lista[0] : registrarDep(p.departamento, 'citado');
+      if (d) d.responsaveis.push({ texto: 'Entrevistado: ' + [t(p.nome), t(p.cargo)].filter(Boolean).join(' — '), pendente: false });
+    });
+
+    /* Processos mapeados */
+    const processos = E.processos.filter((p) => t(p.nome) || t(p.etapas)).map((p) => {
+      const nome = t(p.nome) || 'Processo sem nome';
+      const r = t(p.departamento) ? depsDoTexto(p.departamento) : { lista: [] };
+      const dono = r.lista[0] || null;
+      const envolvidos = t(p.envolvidos) ? depsDoTexto(p.envolvidos).lista.filter((d) => d !== dono) : [];
+      const proc = { id: p.id, nome, dono, envolvidos, dados: p, etapas: frases(p.etapas).length > 1 ? frases(p.etapas) : t(p.etapas).split(/\n+/).map(t).filter(Boolean) };
+      if (dono) dono.processos.push(proc);
+      envolvidos.forEach((d) => d.processos.push(proc));
+      if (envolvidos.length) interdep.push({ texto: 'Processo ' + nome + ': ' + [dono && dono.nome].concat(envolvidos.map((d) => d.nome)).filter(Boolean).join(', '), fonte: 'Processos › ' + nome, deps: [] });
+      ['problemas', 'regras'].forEach((k) => {
+        if (!t(p[k])) return;
+        const alvo = dono ? [dono] : [];
+        frases(p[k]).forEach((f) => {
+          const fato = { texto: nome + ': ' + f, fonte: 'Processos › ' + nome, pendente: !!p[k + '__confirmar'], modo: 'nome' };
+          if (k === 'problemas') { (alvo.length ? alvo[0].problemas : geral.problemas).push(fato); (alvo.length ? alvo[0].fatos : geral.fatos).push(fato); }
+          else (alvo.length ? alvo[0].regras : (geral.regras = geral.regras || [])).push(fato);
+        });
+      });
+      return proc;
+    });
+
+    /* ---------- 4. Padrões (com evidência e contexto) ---------- */
+    const evidencias = [];
+    respostas.filter((r) => r.classe === 'informativa' && !/^(req|sol)_/.test(r.id) && r.id !== 'org_organograma').forEach((r) => evidencias.push({ texto: r.texto, fonte: r.fonte, atual: !/^emp_objetivos$/.test(r.id) }));
+    E.departamentos.filter((d) => t(d.nome)).forEach((d) => ['atividades', 'ferramentas', 'dificuldades', 'entradas'].forEach((k) => {
+      if (t(d[k])) evidencias.push({ texto: t(d[k]), fonte: 'Departamentos › ' + t(d.nome), depNome: t(d.nome), atual: true });
+    }));
+    E.processos.forEach((p) => ['etapas', 'ferramentas', 'problemas'].forEach((k) => {
+      if (t(p[k])) evidencias.push({ texto: t(p[k]), fonte: 'Processos › ' + (t(p.nome) || 'sem nome'), depNome: t(p.departamento), atual: true });
+    }));
+    ['req_funcionais', 'sol_preferencia', 'sol_ideal'].forEach((id) => { const r = info(id); if (r) evidencias.push({ texto: r.texto, fonte: r.fonte, atual: false }); });
+    // "Quais controles são feitos em planilhas…?" — as áreas citadas usam planilha mesmo sem a palavra na resposta
+    const rPlan = info('sis_planilhas');
+
+    const padroesGerais = {};
+    function anexarPadrao(d, pad, ev) {
+      const alvo = d ? d.padroes : padroesGerais;
+      if (!alvo[pad.id]) alvo[pad.id] = { def: pad, evidencias: [] };
+      if (!alvo[pad.id].evidencias.some((e) => e.fonte === ev.fonte)) alvo[pad.id].evidencias.push(ev);
+    }
+    evidencias.forEach((ev) => {
+      const n = norm(ev.texto);
+      PADROES.forEach((pad) => {
+        if (!pad.detectar(n)) return;
+        let alvos = [];
+        if (ev.depNome) { const r = depsDoTexto(ev.depNome); alvos = r.lista.length ? [r.lista[0]] : []; }
+        if (!alvos.length) alvos = depsDoTexto(ev.texto).lista;
+        if (pad.dept && (!alvos.length || !alvos.some((d) => d.cat.nome === pad.dept))) {
+          const d = deps.find((x) => x.cat.nome === pad.dept);
+          if (d) alvos = [d];
+        }
+        if (!alvos.length) anexarPadrao(null, pad, ev);
+        alvos.forEach((d) => anexarPadrao(d, pad, ev));
+      });
+    });
+    if (rPlan) depsDoTexto(rPlan.texto).lista.forEach((d) => anexarPadrao(d, PADROES.find((p) => p.id === 'planilha'), { texto: R.PERGUNTAS.sis_planilhas.curto + ': ' + rPlan.texto, fonte: rPlan.fonte, atual: true }));
+    /* Padrão geral já coberto por algum departamento não vira solução transversal repetida. */
+    Object.keys(padroesGerais).forEach((id) => { if (deps.some((d) => d.padroes[id])) delete padroesGerais[id]; });
+
+    /* ---------- 5. Volumes, empresas, aprovação, prazo ---------- */
+    const volumes = [];
+    respostas.concat(E.departamentos.map((d) => ({ texto: [d.atividades, d.dificuldades].filter(Boolean).join('\n'), fonte: 'Departamentos › ' + t(d.nome) })))
+      .forEach((r) => {
+        const n = norm(r.texto || '');
+        const g = new RegExp(QUANT.source, 'g');
+        let m;
+        while ((m = g.exec(n))) volumes.push({ n: Number(m[1].replace(/\./g, '')), unidade: m[2], periodo: m[3] || (/(uma vez|1 vez) (na|por) semana|semanal/.test(n) ? 'semana' : ''), trecho: r.texto.substr(m.index, m[0].length), fonte: r.fonte });
+      });
+    const volPag = volumes.filter((v) => /pix|pagament|pessoas|funcionari|colaborador|transfer/.test(v.unidade));
+    const numerosDistintos = [...new Set(volPag.map((v) => v.n))];
+    const divergencia = numerosDistintos.length > 1 ? volPag : null;
+
+    let multiempresa = null;
+    respostas.filter((r) => r.classe === 'informativa').some((r) => {
+      const m = /(\d+)\s+empresas/.exec(norm(r.texto));
+      if (m && Number(m[1]) >= 2) { multiempresa = { n: Number(m[1]), texto: r.texto, fonte: r.fonte }; return true; }
+      return false;
+    });
+
+    let aprovador = null;
+    const rDec = info('org_decisao');
+    if (rDec) {
+      const m = /\b(ceo|diretor\w*|dono|socio\w*|presidente|gerente geral|proprietari\w*)\b/.exec(norm(rDec.texto));
+      if (m) aprovador = { papel: rDec.texto.substr(m.index, m[0].length).toUpperCase() === 'CEO' ? 'CEO' : rDec.texto.substr(m.index, m[0].length), texto: rDec.texto, fonte: rDec.fonte };
+    }
+
+    let prazoDias = null;
+    const rPrazo = info('sol_prazo');
+    if (rPrazo) {
+      const m = /(\d+)\s*(dia|semana|mes|meses|ano)/.exec(norm(rPrazo.texto));
+      if (m) prazoDias = Number(m[1]) * ({ dia: 1, semana: 7, mes: 30, meses: 30, ano: 365 }[m[2]] || 1);
+    }
+
+    const semSistema = (() => {
+      const r = porId.sis_lista;
+      if (!r || r.classe === 'vazia') return null;
+      const n = norm(r.texto);
+      if (r.classe === 'negativa' || /^(apenas|so|somente)\s+(planilha|excel)|^planilhas?$|nenhum sistema/.test(n)) return { texto: r.texto, fonte: r.fonte };
+      return null;
+    })();
+    const sistemasAtuais = semSistema ? [] : frases(porId.sis_lista ? porId.sis_lista.texto : '').filter((l) => !/^(apenas|so|somente)?\s*(planilha|excel)/.test(norm(l)));
+
+    /* ---------- 6. Requisitos e regras do cliente ---------- */
+    const reqGeral = [];
+    function addReq(id, tipo) {
+      const r = porId[id];
+      if (!r || r.classe === 'vazia') return;
+      frases(r.texto).forEach((f) => {
+        const vaga = r.classe === 'vaga' || r.classe === 'desconhecida';
+        const req = { texto: f, fonte: r.fonte, pendente: r.pendente || vaga, vaga, negativa: r.classe === 'negativa', tipo, qid: id };
+        const alvo = tipo === 'RF' ? depsDoTexto(f).lista : [];
+        if (alvo.length && tipo === 'RF') alvo.forEach((d) => d.requisitos.push(req));
+        reqGeral.push(Object.assign({ deps: alvo.map((d) => d.nome) }, req));
+      });
+    }
+    addReq('req_funcionais', 'RF'); addReq('req_relatorios', 'RF');
+    ['req_usuarios', 'req_acesso', 'req_seguranca', 'req_desempenho'].forEach((id) => addReq(id, 'RNF'));
+    const regrasGerais = [];
+    const rRegras = porId.req_regras;
+    if (rRegras && rRegras.classe !== 'vazia') {
+      frases(rRegras.texto).forEach((f) => {
+        const vaga = rRegras.classe === 'vaga';
+        const regra = { texto: f, fonte: rRegras.fonte, pendente: rRegras.pendente || vaga, vaga };
+        const alvo = depsDoTexto(f).lista;
+        alvo.forEach((d) => d.regras.push(regra));
+        regrasGerais.push(Object.assign({ deps: alvo.map((d) => d.nome) }, regra));
+      });
+    }
+
+    /* Prioridades do cliente, na ordem informada */
+    const prioridades = [];
+    const rPri = porId.sol_prioridades;
+    if (rPri && rPri.classe === 'informativa') {
+      frases(rPri.texto).forEach((f, i) => {
+        const alvo = depsDoTexto(f).lista;
+        alvo.forEach((d) => { if (!d.prioridades.length) d.prioridades.push({ ordem: i + 1, texto: f, fonte: rPri.fonte, pendente: rPri.pendente }); });
+        prioridades.push({ ordem: i + 1, texto: f, fonte: rPri.fonte, pendente: rPri.pendente, deps: alvo.map((d) => d.nome) });
+      });
+    }
+
+    /* ---------- 7. Pendências ---------- */
+    const pendencias = { semResposta: [], vagas: [], desconhecidas: [], marcadas: [], divergencias: [], esclarecer: [] };
+    respostas.forEach((r) => {
+      if (r.classe === 'vazia') pendencias.semResposta.push(r);
+      else if (r.classe === 'vaga') pendencias.vagas.push(r);
+      else if (r.classe === 'desconhecida') pendencias.desconhecidas.push(r);
+      else if (r.pendente) pendencias.marcadas.push(r);
+    });
+    if (divergencia) pendencias.divergencias.push({ texto: 'Volumes diferentes informados para pagamentos: ' + divergencia.map((v) => '“' + v.trecho + '” (' + v.fonte + ')').join('; ') + '. Confirmar o volume real.', fonte: 'Análise das respostas' });
+
+    /* Departamentos ordenados: prioridade do cliente, depois os que têm mais conteúdo */
+    deps.forEach((d) => { d.ordem = d.prioridades.length ? d.prioridades[0].ordem : 99; d.peso = Object.keys(d.padroes).length * 3 + d.problemas.length * 2 + d.fatos.length + d.requisitos.length; });
+    deps.sort((a, b) => a.ordem - b.ordem || b.peso - a.peso);
+
+    return {
+      respostas, porId, deps, geral, interdep, processos, padroesGerais, PADROES,
+      volumes: volPag, divergencia, multiempresa, aprovador, prazoDias, semSistema, sistemasAtuais,
+      reqGeral, regrasGerais, prioridades, pendencias,
+      classe: (id) => (porId[id] ? porId[id].classe : 'vazia'),
+      resposta: (id) => porId[id] || null
+    };
+  }
+
+  R.analise = { analisar, classificar, norm, slug, frases };
+})();
