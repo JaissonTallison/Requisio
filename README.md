@@ -25,7 +25,8 @@ Ferramenta de levantamento de requisitos e mapeamento de processos para usar em 
   - Perguntas essenciais sem resposta e respostas vagas.
   - Empresas sem papel ou CNPJ.
   - Departamentos sem responsável, sem atividades, sem definição de onde funcionam ou sem processo mapeado.
-  - Volumes divergentes e respostas marcadas para confirmar.
+  - Volumes de pagamento divergentes, número de empresas diferente do cadastro e respostas marcadas para confirmar.
+  - Perguntas para aprofundar com o cliente, conforme os problemas já relatados.
 - **Exemplos de resposta:** abaixo de cada pergunta, em cinza claro, há exemplos para o entrevistador orientar quem não sabe responder. Tocar num exemplo insere o texto no campo, onde pode ser editado; nada é preenchido sem esse toque.
 - **Voltar sem perder nada:** os botões Anterior e Próxima, o gesto de voltar do celular e o botão Voltar do navegador trocam de etapa dentro do Requisio; nada do que foi preenchido é apagado.
 - **Fotos e documentos:** cada etapa tem **Tirar foto** (abre a câmera no celular e no tablet) e **Anexar arquivo** (planilhas, PDFs, imagens, documentos), com descrição. Fotos grandes são reduzidas para até 1600 px. Limite de 30 MB por arquivo. As descrições entram na análise, e os anexos aparecem no anexo técnico do relatório.
@@ -111,7 +112,7 @@ lib/mermaid/             biblioteca de diagramas (MIT)
 - **A análise é por regras, não por inteligência artificial.** Ela reconhece os padrões cadastrados (pagamentos manuais, planilhas, mensagens, informação descentralizada, fluxo de caixa, contratação), negações, respostas vagas e volumes. Problemas fora desses padrões aparecem como fatos informados pelo cliente, sem solução proposta, e precisam ser tratados manualmente.
 - **Voz depende do navegador.** Chrome e Edge enviam o áudio ao serviço de reconhecimento do fornecedor, então é preciso internet. O Firefox não oferece o recurso. No Safari, o funcionamento varia por versão.
 - **Os dados ficam no aparelho e no navegador em que foram preenchidos.** Não há sincronização entre celular, tablet e computador (isso exigiria servidor). Para levar um levantamento de um aparelho para outro, use Exportar e Importar JSON.
-- **Limpar os dados de navegação apaga os levantamentos.** No Safari (iPhone e iPad), o próprio navegador pode apagar dados de sites não visitados há mais de 7 dias; adicionar o Requisio à Tela de Início evita isso. Exporte o JSON ao final de cada visita como cópia externa.
+- **Limpar os dados de navegação apaga os levantamentos.** No Safari (iPhone e iPad), o próprio navegador pode apagar dados de sites não visitados há mais de 7 dias; o ícone da Tela de Início pode ter armazenamento separado do Safari, então use sempre o mesmo dos dois. Exporte o JSON ao final de cada visita como cópia externa.
 - **Arquivos anexados aumentam o JSON exportado** (vão embutidos no arquivo).
 - **Gerar novamente o relatório** substitui as edições feitas nele (o sistema avisa antes).
 - **Diagramas grandes** podem ocupar uma página inteira no PDF.

@@ -62,14 +62,14 @@
 
   /* ---------- Catálogo de departamentos (nome explícito e tema) ---------- */
   const CATALOGO = [
-    { nome: 'Financeiro', nomeRe: /financeir|financas|tesouraria|contas a (pagar|receber)/, temaRe: /pagament|\bpix\b|fluxo de caixa|cobranc|faturament|boleto|\bbancos?\b/ },
-    { nome: 'RH', nomeRe: /\brh\b|recursos humanos|departamento pessoal|gestao de pessoas/, temaRe: /contrat\w* (de )?(funcionari|colaborador|pessoa)|admiss|demiss|\bclt\b|avulso|diarist|folha de pagamento|ponto eletronico|vinculo/ },
+    { nome: 'Financeiro', nomeRe: /financeir|financas|tesouraria|contas a (pagar|receber)/, temaRe: /pagament|\bpix\b|fluxo de caixa|cobranc|faturament|boleto|\bbancos?\b|\bpagar\b|\breceber\b|recebimento|saldo/ },
+    { nome: 'RH', nomeRe: /\brh\b|recursos humanos|departamento pessoal|gestao de pessoas/, temaRe: /contrat\w* (de )?(funcionari|colaborador|pessoa)|admiss|demiss|\bclt\b|avulso|diarist|folha de pagamento|ponto eletronico|vinculo|presenca|\bdiarias?\b|\bpessoal\b/ },
     { nome: 'Compras', nomeRe: /\bcompras?\b|suprimentos/, temaRe: /fornecedor|cotac|pedido de compra|aquisic/ },
     { nome: 'Administrativo', nomeRe: /administrativ|administrac|admintrac|\badmin\b|\badm\b/, temaRe: /arquivo de documentos|protocolo/ },
     { nome: 'Comercial', nomeRe: /comercial|\bvendas\b/, temaRe: /vendedor|proposta comercial|carteira de clientes/ },
     { nome: 'Operacional', nomeRe: /\boperacional\b|setor de operacoes|area de operacoes|\bproducao\b/, temaRe: /ordem de servico|execucao do servico|equipe de campo|canteiro/ },
     { nome: 'Licitações', nomeRe: /licitac/, temaRe: /edital|editais|pregao|certame|habilitac|certid/ },
-    { nome: 'Contratos', nomeRe: /\bcontratos?\b(?! de trabalho| clt)|gestao de contratos/, temaRe: /medic|empenho|aditivo|vigencia|reajuste/ },
+    { nome: 'Contratos', nomeRe: /\bcontratos\b(?! de trabalho| clt)|gestao de contratos/, temaRe: /\bcontrato\b(?! de trabalho| clt)|medic|empenho|aditivo|vigencia|reajuste/ },
     { nome: 'Estoque e logística', nomeRe: /estoque|almoxarifado|logistica|expedicao/, temaRe: /inventario|frete|entrega de material/ },
     { nome: 'Contabilidade e prestação de contas', nomeRe: /contabil|contabilidade|prestacao de contas|\bfiscal\b/, temaRe: /nota fiscal|nf-?e|imposto|tribut|prestar contas|tribunal de contas|regime tributario/ },
     { nome: 'TI', nomeRe: /\bti\b|tecnologia da informacao|informatica/, temaRe: /servidor|suporte tecnico/ }
@@ -253,7 +253,52 @@
     }
   );
 
-  const QUANT = /(\d[\d.]*)\s+(pix|pagamentos?|pessoas|funcionarios|colaboradores|transferencias)\b(?:[^.\n]{0,30}?\b(?:por|na|ao|toda|cada)\s+(semana|mes|dia|quinzena))?/g;
+  const padraoArea = (o) => PADROES.push(Object.assign({ relacoes: [], integracoes: [] }, o));
+  padraoArea({
+    id: 'documentos', dept: 'Administrativo', titulo: 'Documentos sem controle centralizado',
+    detectar: (n) => achar(/documento|certid|alvara/, n) && achar(/mistur|espalhad|pastas? fisica|vencem|vencid|sem aviso/, n),
+    causa: 'Documentos e validades são guardados em pastas, sem organização única nem aviso.',
+    impacto: 'Dificuldade para encontrar documentos e risco de usar documento vencido ou de outra empresa.',
+    objetivo: 'Guardar cada documento com tipo, validade e responsável, e encontrá-lo rapidamente.',
+    solucao: 'Arquivo digital de documentos, com classificação, validade, avisos e histórico de versões.',
+    tobe: [['Administrativo', 'Registra o documento e a validade'], ['Sistema', 'Avisa antes do vencimento'], ['Administrativo', 'Substitui pela nova versão']],
+    funcionalidades: [['Arquivo digital de documentos', 'padrao'], ['Alertas de vencimento de documentos', 'padrao'], ['Histórico de versões dos documentos', 'padrao']],
+    entidades: [['DocumentoArquivo', ['tipo', 'validade', 'versao']]],
+    atores: [['Administrativo', 'registra e atualiza documentos']],
+    criterios: () => ['Um documento é encontrado por tipo e validade.', 'O responsável é avisado antes do vencimento.'],
+    riscos: ['O acervo atual precisa ser digitalizado e classificado.'], perguntas: ['Quais documentos têm validade e quem é responsável por renová-los?']
+  });
+  padraoArea({
+    id: 'compras', dept: 'Compras', titulo: 'Compras e cotações sem controle estruturado',
+    detectar: (n) => achar(/cotac|fornecedor|\bpedidos?\b|quantidades/, n) && achar(/whatsapp|perdem|perdid|historico de precos|a mao|planilha/, n) && achar(/compra|cotac|fornecedor|preco|quantidades/, n),
+    causa: 'Pedidos, cotações e preços são tratados por mensagens ou controles manuais.',
+    impacto: 'Pedidos podem se perder e não há base para comparar preços.',
+    objetivo: 'Acompanhar cada compra do pedido ao recebimento.',
+    solucao: 'Fluxo de solicitação, cotação, aprovação, pedido e recebimento, com histórico de preços por fornecedor.',
+    tobe: [['Solicitante', 'Registra a necessidade'], ['Compras', 'Registra as cotações'], ['Aprovador', 'Aprova a compra'], ['Compras', 'Emite o pedido'], ['Solicitante', 'Confirma o recebimento']],
+    funcionalidades: [['Solicitação de compra', 'padrao'], ['Cotações e histórico de preços', 'padrao'], ['Aprovação da compra', 'especifica'], ['Pedido e recebimento', 'padrao']],
+    entidades: [['SolicitacaoCompra', ['item', 'quantidade', 'situacao']], ['Cotacao', ['fornecedor', 'valor']]],
+    relacoes: [['SolicitacaoCompra', '1', '*', 'Cotacao']],
+    atores: [['Compras', 'registra cotações e pedidos'], ['Aprovador', 'aprova compras'], ['Solicitante', 'pede e confirma o recebimento']],
+    criterios: () => ['Todo pedido tem solicitante, situação e histórico.', 'Os preços anteriores de cada fornecedor podem ser consultados.'],
+    riscos: ['As equipes precisam deixar de pedir por mensagem.'], perguntas: ['Quem aprova compras e até que valor?', 'Quem confirma o recebimento?']
+  });
+  padraoArea({
+    id: 'execucao', dept: 'Operacional', titulo: 'Registro da execução em papel ou disperso',
+    detectar: (n) => achar(/relatorios? de execucao|diario de obra|execucao dos servicos/, n) && achar(/papel|espalhad|celulares|fotos/, n),
+    causa: 'A execução é registrada em papel ou em fotos guardadas em aparelhos diferentes.',
+    impacto: 'Dificuldade para comprovar o serviço executado.',
+    objetivo: 'Registrar a execução no local, com evidências reunidas.',
+    solucao: 'Registro digital da execução por local e período, com fotos e conferência do responsável.',
+    tobe: [['Encarregado', 'Registra a execução e as fotos'], ['Operacional', 'Confere o registro'], ['Sistema', 'Disponibiliza as evidências']],
+    funcionalidades: [['Registro de execução por local', 'especifica'], ['Fotos ligadas à execução', 'padrao'], ['Conferência da execução', 'especifica']],
+    entidades: [['Execucao', ['local', 'periodo', 'situacao']]],
+    atores: [['Encarregado', 'registra a execução'], ['Operacional', 'confere os registros']],
+    criterios: () => ['Cada execução pode ser consultada com local, período e fotos.'],
+    riscos: ['O registro em campo pode precisar funcionar sem internet.'], perguntas: ['O que precisa constar no relatório de execução?']
+  });
+
+  const QUANT = /(\d[\d.]*)\s+(pix|pagamentos?|pessoas|funcionarios|colaboradores|diaristas|transferencias)\b(?:[^.\n]{0,30}?\b(?:por|na|ao|toda|cada)\s+(semana|mes|dia|quinzena))?/g;
 
   function analisar(E) {
     const P = R.PERGUNTAS;
@@ -303,19 +348,24 @@
     E.departamentos.filter((d) => t(d.nome)).forEach((d) => registrarDep(d.nome, 'cadastrado', { dados: d }));
     const organo = resp('org_organograma');
     if (organo && classificar(organo) !== 'negativa') {
-      norm(organo).split(/,|;|\n|\be\b|\/|\(|\)/).map((x) => x.trim()).filter((x) => x && x.split(/\s+/).length <= 3)
+      /* Só uma lista simples de áreas cria departamento fora do catálogo; frase corrida usa apenas o catálogo. */
+      const listaSimples = !/[.:;()\d]/.test(organo.replace(/[.\s]+$/, ''));
+      norm(organo).split(/,|;|\n|\be\b|\/|\(|\)/).map((x) => x.trim().replace(/\.$/, '')).filter((x) => x && x.split(/\s+/).length <= 3)
         .forEach((tok) => {
+          const noCatalogo = CATALOGO.some((k) => k.nomeRe.test(tok));
+          if (!noCatalogo && (!listaSimples || /^(na|no|nas|nos|em|um|uma|abaixo|acima|cada|depois|os|as|o|a)\b/.test(tok))) return;
           const ini = norm(organo).indexOf(tok);
           registrarDep(ini >= 0 ? organo.substr(ini, tok.length) : tok, 'citado');
         });
     }
     E.processos.forEach((p) => { if (t(p.departamento)) registrarDep(p.departamento, 'citado'); });
 
-    /* Departamentos citados por nome em qualquer resposta */
-    respostas.filter((r) => r.classe !== 'vazia').forEach((r) => {
-      const n = norm(r.texto);
-      CATALOGO.forEach((k) => { if (achar(k.nomeRe, n)) registrarDep(k.nome, 'citado'); });
-    });
+    /* Departamentos citados por nome, só em respostas que tratam de áreas ("estoque pequeno" não é departamento) */
+    ['org_organograma', 'org_colaboradores', 'dep_integracao', 'prb_gargalos', 'sis_planilhas', 'req_relatorios', 'sol_prioridades']
+      .map((id) => porId[id]).filter((r) => r && r.classe !== 'vazia').forEach((r) => {
+        const n = norm(r.texto);
+        CATALOGO.forEach((k) => { if (achar(k.nomeRe, n)) registrarDep(k.nome, 'citado'); });
+      });
 
     function depsDoTexto(texto) {
       const n = norm(texto);
@@ -331,6 +381,13 @@
       });
       return { lista: escolhidos, modo: escolhidos.length ? 'tema' : '' };
     }
+
+    /* Requisitos e prioridades podem tocar várias áreas: soma as citadas pelo nome e as do assunto. */
+    function depsAmplo(texto) {
+      const n = norm(texto);
+      return deps.filter((d) => achar(d.cat.nomeRe, n) || (d.cat.temaRe && achar(d.cat.temaRe, n)));
+    }
+    const ehDoGrupo = (texto) => (c.grupo || []).length >= 2 && /\bempresas?\b|\bgrupo\b|consolidad/.test(norm(texto));
 
     /* ---------- 3. Fatos atribuídos ---------- */
     const geral = { fatos: [], problemas: [] };
@@ -442,21 +499,37 @@
     if (rPlan) depsDoTexto(rPlan.texto).lista.forEach((d) => anexarPadrao(d, PADROES.find((p) => p.id === 'planilha'), { texto: R.PERGUNTAS.sis_planilhas.curto + ': ' + rPlan.texto, fonte: rPlan.fonte, atual: true }));
     /* "Pessoal com vínculos variados" já cobre o cadastro e a contratação. */
     deps.forEach((d) => { if (d.padroes.diaristas && d.padroes.contratacao) { d.padroes.diaristas.evidencias.push(...d.padroes.contratacao.evidencias); delete d.padroes.contratacao; } });
+    /* Padrão genérico em três ou mais áreas vira uma solução única entre departamentos. */
+    ['planilha', 'mensagens', 'centralizacao'].forEach((id) => {
+      const com = deps.filter((d) => d.padroes[id]);
+      if (com.length < 3) return;
+      const pad = padroesGerais[id] || (padroesGerais[id] = { def: com[0].padroes[id].def, evidencias: [] });
+      com.forEach((d) => {
+        d.padroes[id].evidencias.forEach((ev) => { if (!pad.evidencias.some((e) => e.fonte === ev.fonte)) pad.evidencias.push(ev); });
+        delete d.padroes[id];
+      });
+    });
     /* Padrão geral já coberto por algum departamento não vira solução transversal repetida. */
     Object.keys(padroesGerais).forEach((id) => { if (deps.some((d) => d.padroes[id])) delete padroesGerais[id]; });
 
     /* ---------- 5. Volumes, empresas, aprovação, prazo ---------- */
-    const volumes = [];
+    /* Só conta como volume de pagamento o número que fala de pagamento na mesma oração;
+       total de funcionários não é comparado com pagamentos por semana. */
+    const volPag = [];
     respostas.concat(E.departamentos.map((d) => ({ texto: [d.atividades, d.dificuldades].filter(Boolean).join('\n'), fonte: 'Departamentos › ' + t(d.nome) })))
-      .forEach((r) => {
-        const n = norm(r.texto || '');
+      .forEach((r) => frases(r.texto).flatMap((f) => f.split(/[,;]\s+|\s+e\s+(?=\d)/)).forEach((oracao) => {
+        const n = norm(oracao);
         const g = new RegExp(QUANT.source, 'g');
         let m;
-        while ((m = g.exec(n))) volumes.push({ n: Number(m[1].replace(/\./g, '')), unidade: m[2], periodo: m[3] || (/(uma vez|1 vez) (na|por) semana|semanal/.test(n) ? 'semana' : ''), trecho: r.texto.substr(m.index, m[0].length), fonte: r.fonte });
-      });
-    const volPag = volumes.filter((v) => /pix|pagament|pessoas|funcionari|colaborador|transfer/.test(v.unidade));
-    const numerosDistintos = [...new Set(volPag.map((v) => v.n))];
-    const divergencia = numerosDistintos.length > 1 ? volPag : null;
+        while ((m = g.exec(n))) {
+          const direta = /pix|pagament|transfer/.test(m[2]);
+          if (!direta && !/pagament|\bpix\b|\bpag[oa]s?\b|\bpagamos\b/.test(n)) continue;
+          const periodo = m[3] || (/semana(l|lmente)?\b/.test(n) ? 'semana' : /\bmes\b|mensal/.test(n) ? 'mes' : '');
+          volPag.push({ n: Number(m[1].replace(/\./g, '')), unidade: m[2], periodo, trecho: oracao.substr(m.index, m[0].length), fonte: r.fonte });
+        }
+      }));
+    const conflito = volPag.filter((v) => volPag.some((o) => o.n !== v.n && (!o.periodo || !v.periodo || o.periodo === v.periodo)));
+    const divergencia = conflito.length ? conflito : null;
 
     const grupo = (c.grupo || []).filter((x) => t(x.nome));
     const admin = grupo.find((x) => /^administradora/.test(x.papel || '')) || null;
@@ -500,9 +573,9 @@
       frases(r.texto).forEach((f) => {
         const vaga = r.classe === 'vaga' || r.classe === 'desconhecida';
         const req = { texto: f, fonte: r.fonte, pendente: r.pendente || vaga, vaga, negativa: r.classe === 'negativa', tipo, qid: id };
-        const alvo = tipo === 'RF' ? depsDoTexto(f).lista : [];
+        const alvo = tipo === 'RF' ? depsAmplo(f) : [];
         if (alvo.length && tipo === 'RF') alvo.forEach((d) => d.requisitos.push(req));
-        reqGeral.push(Object.assign({ deps: alvo.map((d) => d.nome) }, req));
+        reqGeral.push(Object.assign({ deps: alvo.map((d) => d.nome).concat(tipo === 'RF' && ehDoGrupo(f) ? ['Estrutura multiempresa'] : []) }, req));
       });
     }
     addReq('req_funcionais', 'RF'); addReq('req_relatorios', 'RF');
@@ -524,9 +597,9 @@
     const rPri = porId.sol_prioridades;
     if (rPri && rPri.classe === 'informativa') {
       frases(rPri.texto).forEach((f, i) => {
-        const alvo = depsDoTexto(f).lista;
+        const alvo = depsAmplo(f);
         alvo.forEach((d) => { if (!d.prioridades.length) d.prioridades.push({ ordem: i + 1, texto: f, fonte: rPri.fonte, pendente: rPri.pendente }); });
-        prioridades.push({ ordem: i + 1, texto: f, fonte: rPri.fonte, pendente: rPri.pendente, deps: alvo.map((d) => d.nome) });
+        prioridades.push({ ordem: i + 1, texto: f, fonte: rPri.fonte, pendente: rPri.pendente, deps: alvo.map((d) => d.nome).concat(ehDoGrupo(f) ? ['Estrutura multiempresa'] : []) });
       });
     }
 
