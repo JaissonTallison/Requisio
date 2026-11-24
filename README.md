@@ -36,7 +36,7 @@ Ferramenta de levantamento de requisitos e mapeamento de processos para usar em 
 
 ## Onde os dados ficam e como são protegidos
 
-- **Levantamentos salvos:** o botão **Levantamentos** lista todos os levantamentos guardados no aparelho, com relatório e anexos, para abrir, exportar ou excluir. **Novo levantamento** não apaga o anterior; excluir só acontece pela lista, com confirmação.
+- **Levantamentos salvos:** o botão **Levantamentos** lista todos os levantamentos guardados no aparelho, com relatório e anexos, para abrir, exportar ou excluir. **Novo levantamento** não apaga o anterior. **Excluir** (ícone de lixeira) vale para qualquer levantamento, inclusive o aberto, e move para a **Lixeira**, de onde dá para restaurar ou excluir definitivamente; itens com mais de 30 dias na lixeira são apagados.
 - **Três cópias no aparelho:**
   - **LocalStorage:** cópia rápida do levantamento aberto.
   - **IndexedDB:** todos os levantamentos e arquivos, com gravação confirmada no disco, o que protege contra bateria descarregada ou aparelho travado.

@@ -27,7 +27,7 @@
     return {
       app: 'requisio',
       versao: 1,
-      meta: { id: R.uid(), criadoEm: agora, atualizadoEm: agora, respostasAlteradasEm: '', autorizacaoGravacao: '' },
+      meta: { id: R.uid(), criadoEm: agora, atualizadoEm: agora, respostasAlteradasEm: '', autorizacaoGravacao: '', excluidoEm: '' },
       etapaAtual: 'cadastro',
       cadastro: {
         empresa: '', fantasia: '', cnpj: '', ramo: '', porte: '', cidade: '', site: '',
@@ -300,7 +300,7 @@
       .then((lista) => idbGet('dados', 'levantamento').catch(() => null).then((velho) => (velho && !temSalvo ? lista.concat([velho]) : lista)))
       .then((lista) => {
         lista.forEach((j) => { const e = parse(j); if (e) candidatos.push({ estado: e, origem: 'espelho' }); });
-        return candidatos.filter((c) => c.estado.meta.atualizadoEm > ref)
+        return candidatos.filter((c) => c.estado.meta.atualizadoEm > ref && !c.estado.meta.excluidoEm)
           .sort((a, b) => (a.estado.meta.atualizadoEm < b.estado.meta.atualizadoEm ? 1 : -1))[0] || null;
       });
   }
@@ -311,19 +311,37 @@
     return {
       id: e.meta.id, empresa: e.cadastro.empresa, fantasia: e.cadastro.fantasia, dataVisita: e.cadastro.dataVisita,
       criadoEm: e.meta.criadoEm, atualizadoEm: e.meta.atualizadoEm, respondidas,
-      relatorio: e.diagnostico ? e.diagnostico.geradoEm : '', anexos: (e.anexos || []).length
+      relatorio: e.diagnostico ? e.diagnostico.geradoEm : '', anexos: (e.anexos || []).length, excluidoEm: e.meta.excluidoEm || ''
     };
   }
 
-  /* Todos os levantamentos guardados, do mais recente para o mais antigo. */
+  const DIAS_LIXEIRA = 30;
+
+  /* Todos os levantamentos guardados, do mais recente para o mais antigo (inclui os da lixeira, com excluidoEm).
+     Itens há mais de 30 dias na lixeira são apagados definitivamente. */
   function listar(atual) {
     return idbTodos('levantamentos').catch(() => []).then((l) => {
       const mapa = {};
       l.forEach((x) => { const e = parse(x.valor); if (e) mapa[e.meta.id] = resumoDe(e); });
       if (atual) mapa[atual.meta.id] = resumoDe(atual);
+      const limite = new Date(Date.now() - DIAS_LIXEIRA * 86400000).toISOString();
+      Object.values(mapa).forEach((x) => {
+        if (x.excluidoEm && x.excluidoEm < limite && (!atual || x.id !== atual.meta.id)) { excluir(x.id).catch(() => {}); delete mapa[x.id]; }
+      });
       return Object.values(mapa).sort((a, b) => (a.atualizadoEm < b.atualizadoEm ? 1 : -1));
     });
   }
+
+  /* Lixeira: marca ou desmarca a exclusão, sem apagar dados. */
+  function marcarExcluido(id, excluido) {
+    return abrir(id).then((e) => {
+      if (!e) throw new Error('Levantamento não encontrado.');
+      e.meta.excluidoEm = excluido ? new Date().toISOString() : '';
+      return guardar(e);
+    });
+  }
+  const moverParaLixeira = (id) => marcarExcluido(id, true);
+  const restaurar = (id) => marcarExcluido(id, false);
 
   function abrir(id) {
     return idbGet('levantamentos', id).then((j) => parse(j));
@@ -372,6 +390,6 @@
 
   R.armazenamento = {
     CHAVE, CHAVE_MARCA, inicial, normalizar, carregar, salvar, backup, existeSalvo, marca, lerLocal, recuperarMaisRecente,
-    pedirPersistencia, guardarConflito, listar, abrir, guardar, existeNaLista, excluir, salvarArquivo, lerArquivo, excluirArquivo
+    pedirPersistencia, guardarConflito, listar, abrir, guardar, existeNaLista, excluir, moverParaLixeira, restaurar, DIAS_LIXEIRA, salvarArquivo, lerArquivo, excluirArquivo
   };
 })();

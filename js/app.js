@@ -509,7 +509,7 @@
       '<nav class="sumario" aria-label="Sumário"><p class="sumario-tit">Sumário</p><ol>' + d.secoes.map((s, i) => '<li><a href="#sec-' + s.id + '">' + (s.anexo ? '' : numeradas[i] + '. ') + esc(s.titulo) + '</a></li>').join('') + '</ol></nav></header>';
     h += d.secoes.map((s, i) => {
       const bs = 'diagnostico.secoes.#' + s.id;
-      return '<section class="diag-secao' + (s.anexo ? ' anexo' : '') + '" id="sec-' + s.id + '"><h2>' + (s.anexo ? '' : numeradas[i] + '. ') + esc(s.titulo) + '</h2>' +
+      return '<section class="diag-secao' + (s.anexo ? ' secao-anexo' : '') + '" id="sec-' + s.id + '"><h2>' + (s.anexo ? '' : numeradas[i] + '. ') + esc(s.titulo) + '</h2>' +
         (temTexto(s.nota) ? '<p class="nota" contenteditable="' + EDITAVEL + '" data-path="' + bs + '.nota">' + esc(s.nota) + '</p>' : '') +
         s.grupos.map((gr) => renderGrupo(bs + '.grupos.#' + gr.id, gr)).join('') + '</section>';
     }).join('');
@@ -847,9 +847,13 @@
     lista: () => { menuAberto(false); salvarPendencias(); sujo = true; salvarAgora(true); visao = 'lista'; R.voz.parar(); render(true); },
     'abrir-lev': (b) => abrirLevantamento(b.dataset.id),
     'exportar-lev': (b) => A.abrir(b.dataset.id).then((e) => (e ? exportar(e) : alert('Levantamento não encontrado.'))),
-    'excluir-lev': (b) => {
-      if (!confirm('Excluir definitivamente o levantamento “' + (b.dataset.nome || 'sem nome') + '”, com relatório e anexos? Esta ação não pode ser desfeita. Exporte o JSON antes se quiser guardar uma cópia.')) return;
-      A.excluir(b.dataset.id).then(() => { mostrarStatus('Levantamento excluído.'); render(); }).catch(() => alert('Não foi possível excluir.'));
+    'excluir-lev': (b) => moverParaLixeira(b.dataset.id, b.dataset.nome),
+    'restaurar-lev': (b) => {
+      A.restaurar(b.dataset.id).then(() => { mostrarStatus('Levantamento “' + (b.dataset.nome || 'sem nome') + '” restaurado.'); render(); }).catch(() => alert('Não foi possível restaurar.'));
+    },
+    'apagar-lev': (b) => {
+      if (!confirm('Excluir definitivamente “' + (b.dataset.nome || 'sem nome') + '”, com relatório e anexos? Esta ação não pode ser desfeita.')) return;
+      A.excluir(b.dataset.id).then(() => { mostrarStatus('Levantamento excluído definitivamente.'); render(); }).catch(() => alert('Não foi possível excluir.'));
     },
     'remover-anexo': (b) => {
       const i = estado.anexos.findIndex((a) => a.id === b.dataset.id);
@@ -1052,28 +1056,64 @@
     return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR');
   }
 
+  /* Move para a lixeira (pode ser restaurado). Se for o aberto, abre o mais recente dos outros ou um novo. */
+  function moverParaLixeira(id, nome) {
+    if (!confirm('Mover “' + (nome || 'sem nome') + '” para a lixeira? Ele pode ser restaurado em até ' + A.DIAS_LIXEIRA + ' dias.')) return;
+    const fim = () => { mostrarStatus('“' + (nome || 'sem nome') + '” foi para a lixeira.'); render(); };
+    if (id !== estado.meta.id) { A.moverParaLixeira(id).then(fim).catch(() => alert('Não foi possível excluir.')); return; }
+    R.voz.parar();
+    salvarPendencias();
+    estado.meta.excluidoEm = new Date().toISOString();
+    sujo = true; salvarAgora(true);
+    A.guardar(estado).catch(() => {}).then(() => A.listar(null)).then((l) => {
+      const outro = l.find((x) => !x.excluidoEm && x.id !== id);
+      return outro ? A.abrir(outro.id) : null;
+    }).then((e) => {
+      estado = e || A.inicial();
+      sujo = true; salvarAgora(true);
+      marcarHistorico();
+      fim();
+    });
+  }
+
+  const ICONE_LIXEIRA = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+
   function renderLevantamentos() {
     principal.innerHTML = '<div class="pag-cab"><div><h1>Levantamentos salvos</h1><p class="pag-desc">Todos os levantamentos guardados neste aparelho, com relatório e anexos.</p></div>' +
       '<div class="pag-cab-dir"><button type="button" class="btn btn-pri" data-acao="novo">Novo levantamento</button></div></div>' +
       '<section class="painel" id="listaLev"><p class="texto-sec">Carregando…</p></section>';
     A.listar(estado).then((l) => {
+      document.querySelectorAll('.painel.lixeira').forEach((x) => x.remove());
       const alvo = document.getElementById('listaLev');
       if (!alvo) return;
+      const lixeira = l.filter((x) => x.excluidoEm);
+      l = l.filter((x) => !x.excluidoEm);
+      const htmlLixeira = lixeira.length ? '<section class="painel lixeira"><h2 class="painel-tit">Lixeira <span class="painel-cont">' + lixeira.length + '</span></h2>' +
+        '<p class="texto-sec">Levantamentos excluídos podem ser restaurados por ' + A.DIAS_LIXEIRA + ' dias. Depois disso, são apagados definitivamente.</p>' +
+        '<table class="tabela-lev"><thead><tr><th>Empresa</th><th>Excluído em</th><th>Relatório</th><th></th></tr></thead><tbody>' +
+        lixeira.map((x) => {
+          const nome = x.empresa || 'Empresa não informada';
+          return '<tr><td data-rot="Empresa"><div class="lev-cel"><strong>' + esc(nome) + '</strong></div></td><td data-rot="Excluído em"><div class="lev-cel">' + new Date(x.excluidoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + '</div></td>' +
+            '<td data-rot="Relatório"><div class="lev-cel">' + (x.relatorio ? 'Gerado em ' + dataCurta(x.relatorio) : 'Não gerado') + '</div></td>' +
+            '<td class="lev-acoes"><button type="button" class="btn btn-sec" data-acao="restaurar-lev" data-id="' + x.id + '" data-nome="' + esc(nome) + '">Restaurar</button>' +
+            '<button type="button" class="btn-link lev-excluir" data-acao="apagar-lev" data-id="' + x.id + '" data-nome="' + esc(nome) + '">Excluir definitivamente</button></td></tr>';
+        }).join('') + '</tbody></table></section>' : '';
+      alvo.insertAdjacentHTML('afterend', htmlLixeira);
       if (!l.length) { alvo.innerHTML = '<p class="vazio">Nenhum levantamento salvo.</p>'; return; }
       alvo.innerHTML = '<table class="tabela-lev"><thead><tr><th>Empresa</th><th>Visita</th><th>Última alteração</th><th>Respostas</th><th>Relatório</th><th>Anexos</th><th></th></tr></thead><tbody>' +
         l.map((x) => {
           const aberto = x.id === estado.meta.id;
           const nome = x.empresa || 'Empresa não informada';
           return '<tr' + (aberto ? ' class="lev-aberto"' : '') + '>' +
-            '<td data-rot="Empresa"><strong>' + esc(nome) + '</strong>' + (x.fantasia ? '<br><span class="texto-sec">' + esc(x.fantasia) + '</span>' : '') + (aberto ? '<br><span class="lev-tag">Aberto agora</span>' : '') + '</td>' +
-            '<td data-rot="Visita">' + dataCurta(x.dataVisita) + '</td>' +
-            '<td data-rot="Última alteração">' + (x.atualizadoEm ? new Date(x.atualizadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td>' +
-            '<td data-rot="Respostas">' + x.respondidas + '</td>' +
-            '<td data-rot="Relatório">' + (x.relatorio ? 'Gerado em ' + dataCurta(x.relatorio) : 'Não gerado') + '</td>' +
-            '<td data-rot="Anexos">' + x.anexos + '</td>' +
+            '<td data-rot="Empresa"><div class="lev-cel"><strong>' + esc(nome) + '</strong>' + (x.fantasia ? '<br><span class="texto-sec">' + esc(x.fantasia) + '</span>' : '') + (aberto ? '<br><span class="lev-tag">Aberto agora</span>' : '') + '</div></td>' +
+            '<td data-rot="Visita"><div class="lev-cel">' + dataCurta(x.dataVisita) + '</div></td>' +
+            '<td data-rot="Última alteração"><div class="lev-cel">' + (x.atualizadoEm ? new Date(x.atualizadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</div></td>' +
+            '<td data-rot="Respostas"><div class="lev-cel">' + x.respondidas + '</div></td>' +
+            '<td data-rot="Relatório"><div class="lev-cel">' + (x.relatorio ? 'Gerado em ' + dataCurta(x.relatorio) : 'Não gerado') + '</div></td>' +
+            '<td data-rot="Anexos"><div class="lev-cel">' + x.anexos + '</div></td>' +
             '<td class="lev-acoes"><button type="button" class="btn btn-sec" data-acao="abrir-lev" data-id="' + x.id + '">' + (aberto ? 'Continuar' : 'Abrir') + '</button>' +
             '<button type="button" class="btn-link" data-acao="exportar-lev" data-id="' + x.id + '">Exportar</button>' +
-            (aberto ? '' : '<button type="button" class="btn-link lev-excluir" data-acao="excluir-lev" data-id="' + x.id + '" data-nome="' + esc(nome) + '">Excluir</button>') + '</td></tr>';
+            '<button type="button" class="btn-link lev-excluir" data-acao="excluir-lev" data-id="' + x.id + '" data-nome="' + esc(nome) + '" title="Mover para a lixeira">' + ICONE_LIXEIRA + '<span>Excluir</span></button></td></tr>';
         }).join('') + '</tbody></table>';
     });
   }
