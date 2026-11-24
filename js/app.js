@@ -1092,8 +1092,7 @@
   const ICONE_LIXEIRA = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
 
   function renderLevantamentos() {
-    principal.innerHTML = '<div class="pag-cab"><div><h1>Levantamentos salvos</h1><p class="pag-desc">Todos os levantamentos guardados neste aparelho, com relatório e anexos.</p></div>' +
-      '<div class="pag-cab-dir"><button type="button" class="btn btn-pri" data-acao="novo">Novo levantamento</button></div></div>' +
+    principal.innerHTML = '<div class="pag-cab"><div><h1>Levantamentos salvos</h1><p class="pag-desc">Todos os levantamentos guardados neste aparelho, com relatório e anexos.</p></div></div>' +
       '<section class="painel" id="listaLev"><p class="texto-sec">Carregando…</p></section>';
     A.listar(estado).then((l) => {
       document.querySelectorAll('.painel.lixeira').forEach((x) => x.remove());
