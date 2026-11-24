@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Requisio</title>
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <header class="topo">
+    <div class="topo-marca">Requisio</div>
+    <div class="topo-empresa" id="topoEmpresa"></div>
+    <div class="topo-status" id="statusSalvo" aria-live="polite"></div>
+    <div class="topo-acoes">
+      <button type="button" class="btn btn-sec" data-acao="importar">Importar JSON</button>
+      <button type="button" class="btn btn-sec" data-acao="exportar">Exportar JSON</button>
+      <button type="button" class="btn btn-sec" data-acao="novo">Novo levantamento</button>
+      <input type="file" id="arquivoImportar" accept="application/json,.json" hidden>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="etapas" id="navEtapas" aria-label="Etapas do levantamento"></nav>
+    <main class="principal" id="principal"></main>
+  </div>
+
+  <dialog id="dlgGravacao" class="dialogo" aria-labelledby="dlgGravacaoTitulo">
+    <form method="dialog">
+      <h2 id="dlgGravacaoTitulo">Autorização para gravação</h2>
+      <p>Antes de gravar, confirme com o entrevistado que ele autoriza a captura da voz para transcrever as respostas.</p>
+      <p class="texto-sec">O navegador também pedirá permissão para usar o microfone. No Chrome e no Edge, o áudio é processado pelo serviço de reconhecimento de voz do próprio navegador, que exige internet. O Requisio não guarda áudio, apenas o texto transcrito.</p>
+      <div class="dialogo-acoes">
+        <button type="submit" value="cancelar" class="btn btn-sec">Cancelar</button>
+        <button type="submit" value="ok" class="btn btn-pri">O entrevistado autorizou</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/armazenamento.js"></script>
+  <script src="js/etapas.js"></script>
+  <script src="js/voz.js"></script>
+  <script src="js/diagnostico.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
