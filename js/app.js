@@ -156,7 +156,7 @@
     }
     let total = 0, feitas = 0;
     if (et.lista) { total++; if (estado[et.lista].some((x) => temTexto(x.nome))) feitas++; }
-    et.perguntas.forEach((p) => { total++; if (temTexto(estado.respostas[p.id] && estado.respostas[p.id].texto)) feitas++; });
+    et.perguntas.filter((p) => R.perguntaVisivel(p, estado)).forEach((p) => { total++; if (temTexto(estado.respostas[p.id] && estado.respostas[p.id].texto)) feitas++; });
     (estado.extras[et.id] || []).forEach((x) => { if (!temTexto(x.pergunta)) return; total++; if (temTexto(x.resposta)) feitas++; });
     return { feitas, total };
   }
@@ -291,13 +291,20 @@
   }
 
   function renderPerguntas(et) {
-    let h = '';
+    let h = et.id === 'sol' ? renderConferencia() : '';
     if (et.lista) h += '<section class="painel">' + renderLista(et) + '</section>';
     h += '<section class="painel">';
     if (et.lista) h += '<h2 class="painel-tit">Perguntas gerais</h2>';
-    h += et.perguntas.map((p) => {
+    let moduloAtual = '';
+    h += et.perguntas.filter((p) => R.perguntaVisivel(p, estado)).map((p) => {
       const r = estado.respostas[p.id] || {};
-      return campo({ id: 'r_' + p.id, rotulo: p.q, ajuda: p.ajuda, exemplos: p.ex, path: 'respostas.' + p.id + '.texto', valor: r.texto, pathConf: 'respostas.' + p.id + '.confirmar', conf: r.confirmar });
+      let tit = '';
+      if ((p.modulo || '') !== moduloAtual) {
+        moduloAtual = p.modulo || '';
+        const m = R.MODULOS.find((x) => x.id === moduloAtual);
+        if (m) tit = '<h2 class="painel-tit modulo-tit">' + esc(m.titulo) + '</h2>';
+      }
+      return tit + campo({ id: 'r_' + p.id, rotulo: p.q, ajuda: p.ajuda, exemplos: p.ex, path: 'respostas.' + p.id + '.texto', valor: r.texto, pathConf: 'respostas.' + p.id + '.confirmar', conf: r.confirmar });
     }).join('');
     h += renderExtras(et) + '</section>';
     h += renderAnexos(et.id);
@@ -317,8 +324,12 @@
     if (!itens.length) h += '<p class="vazio">Nenhum ' + sing + ' cadastrado.</p>';
     h += itens.map((x, i) => {
       const base = chave + '.#' + x.id;
-      const corpo = campos.map((f) => {
+      const corpo = campos.filter((f) => !f.modulo || estado.modulos[f.modulo]).map((f) => {
         const id = 'f_' + x.id + '_' + f.campo;
+        if (f.opcoes) {
+          return '<div class="campo campo-linha"><label for="' + id + '">' + esc(f.rotulo) + '</label><select id="' + id + '" data-path="' + base + '.' + f.campo + '">' +
+            R[f.opcoes].map(([v, r]) => '<option value="' + v + '"' + ((x[f.campo] || '') === v ? ' selected' : '') + '>' + esc(r) + '</option>').join('') + '</select></div>';
+        }
         if (f.linha) {
           return '<div class="campo campo-linha"><label for="' + id + '">' + esc(f.rotulo) + '</label><input id="' + id + '" type="text" data-path="' + base + '.' + f.campo + '" value="' + esc(x[f.campo]) + '"' + (f.lista ? ' list="' + f.lista + '"' : '') + '></div>';
         }
@@ -331,7 +342,8 @@
         '<button type="button" class="btn-link" data-acao="remover" data-lista="' + chave + '" data-id="' + x.id + '">Remover</button></div>' +
         '<div class="bloco-corpo"><div class="grade-linhas">' + linhas.join('') + '</div>' + textos.join('') + '</div></div>';
     }).join('');
-    h += '<button type="button" class="btn btn-sec" data-acao="add-lista" data-lista="' + chave + '">Adicionar ' + sing + '</button>';
+    h += '<div class="lista-acoes"><button type="button" class="btn btn-sec" data-acao="add-lista" data-lista="' + chave + '">Adicionar ' + sing + '</button>' +
+      (chave === 'departamentos' ? '<button type="button" class="btn btn-sec" data-acao="add-deps-padrao" title="Licitações, Contratos, Financeiro, Compras, Recursos Humanos, Operacional, Administrativo, Contabilidade e prestação de contas">Adicionar departamentos sugeridos</button>' : '') + '</div>';
     return h;
   }
 
@@ -365,6 +377,87 @@
     return h;
   }
 
+  /* Empresas do grupo: papel de cada uma (administradora, operacional). */
+  function renderGrupoEmpresas() {
+    const g = estado.cadastro.grupo;
+    let h = '<section class="painel"><h2 class="painel-tit">Empresas do grupo <span class="painel-cont">' + g.length + '</span></h2>' +
+      '<p class="texto-sec">A administradora pode ter duas visões: gestão do grupo e operação própria. Os dados de cada empresa ficam separados.</p>';
+    if (!g.length) h += '<p class="vazio">Nenhuma empresa cadastrada.</p>';
+    h += g.map((x, i) => {
+      const base = 'cadastro.grupo.#' + x.id;
+      const inp = (k, rot, ph) => '<div class="campo"><label for="g_' + x.id + '_' + k + '">' + rot + '</label><input id="g_' + x.id + '_' + k + '" type="text" placeholder="' + (ph || '') + '" data-path="' + base + '.' + k + '" value="' + esc(x[k]) + '"></div>';
+      return '<div class="bloco"><div class="bloco-cab"><span class="bloco-num">Empresa ' + (i + 1) + '</span>' +
+        '<input class="bloco-nome" type="text" aria-label="Nome da empresa" placeholder="Nome da empresa" data-path="' + base + '.nome" value="' + esc(x.nome) + '">' +
+        '<button type="button" class="btn-link" data-acao="remover" data-lista="cadastro.grupo" data-id="' + x.id + '">Remover</button></div>' +
+        '<div class="bloco-corpo"><div class="grade">' +
+        '<div class="campo"><label for="g_' + x.id + '_papel">Papel no grupo</label><select id="g_' + x.id + '_papel" data-path="' + base + '.papel">' +
+        R.PAPEIS_EMPRESA.map(([v, r]) => '<option value="' + v + '"' + ((x.papel || '') === v ? ' selected' : '') + '>' + r + '</option>').join('') + '</select></div>' +
+        inp('cnpj', 'CNPJ') + inp('areas', 'Áreas de atuação', 'Ex.: alimentação, construção') + inp('obs', 'Observações') +
+        '</div><label class="chk chk-bloco"><input type="checkbox" data-path="' + base + '.confirmar"' + (x.confirmar ? ' checked' : '') + '> Pendente: confirmar depois</label></div></div>';
+    }).join('');
+    return h + '<button type="button" class="btn btn-sec" data-acao="add-empresa">Adicionar empresa</button></section>';
+  }
+
+  /* Conferência antes de sair da visita: o que ainda falta para não deixar lacunas. */
+  function lacunas() {
+    const L = { essenciais: [], vagas: [], marcadas: [], departamentos: [], empresas: [], divergencias: [] };
+    const cls = R.analise.classificar;
+    R.ETAPAS.filter((e) => e.perguntas).forEach((e) => e.perguntas.filter((p) => R.perguntaVisivel(p, estado)).forEach((p) => {
+      const r = estado.respostas[p.id] || {};
+      const c = cls(r.texto, p.descritiva);
+      const item = { etapa: e.id, alvo: 'r_' + p.id, texto: e.titulo + ' › ' + (p.curto || p.q) };
+      if (c === 'vazia') { if (p.essencial) L.essenciais.push(item); }
+      else if (c === 'vaga' || c === 'desconhecida') L.vagas.push(Object.assign(item, { texto: item.texto + ': “' + r.texto.trim() + '”' }));
+      else if (r.confirmar) L.marcadas.push(item);
+    }));
+    if (!estado.departamentos.some((d) => temTexto(d.nome))) L.departamentos.push({ etapa: 'dep', alvo: '', texto: 'Nenhum departamento cadastrado' });
+    estado.departamentos.filter((d) => temTexto(d.nome)).forEach((d) => {
+      const nome = d.nome.trim();
+      const falta = [];
+      if (!temTexto(d.responsavel)) falta.push('responsável');
+      if (!temTexto(d.atividades)) falta.push('atividades');
+      if (estado.modulos.grupo && !d.onde) falta.push('onde funciona no grupo');
+      const n = R.analise.norm(nome);
+      if (!estado.processos.some((p) => temTexto(p.etapas) && R.analise.norm(p.departamento || '').includes(n))) falta.push('processo com passo a passo');
+      if (falta.length) L.departamentos.push({ etapa: d.onde || !estado.modulos.grupo ? (falta.includes('processo com passo a passo') && falta.length === 1 ? 'pro' : 'dep') : 'dep', alvo: 'blk_' + d.id, texto: nome + ': falta ' + falta.join(', ') });
+    });
+    if (estado.modulos.grupo) {
+      const g = estado.cadastro.grupo.filter((x) => temTexto(x.nome));
+      if (g.length < 2) L.empresas.push({ etapa: 'cadastro', alvo: '', texto: 'Cadastrar as empresas do grupo' });
+      if (g.length && !g.some((x) => /^administradora/.test(x.papel || ''))) L.empresas.push({ etapa: 'cadastro', alvo: '', texto: 'Definir qual empresa é a administradora' });
+      g.forEach((x) => {
+        const falta = [];
+        if (!x.papel) falta.push('papel');
+        if (!temTexto(x.cnpj)) falta.push('CNPJ');
+        if (!temTexto(x.areas)) falta.push('áreas de atuação');
+        if (x.confirmar) falta.push('confirmar dados');
+        if (falta.length) L.empresas.push({ etapa: 'cadastro', alvo: 'g_' + x.id + '_papel', texto: x.nome.trim() + ': ' + falta.join(', ') });
+      });
+    }
+    try { const A2 = R.analise.analisar(estado); if (A2.divergencia) L.divergencias.push({ etapa: '', alvo: '', texto: 'Volumes diferentes: ' + A2.divergencia.map((v) => '“' + v.trecho + '”').join(' e ') }); } catch (e) { /* análise indisponível */ }
+    return L;
+  }
+
+  function renderConferencia() {
+    const L = lacunas();
+    const grupos = [
+      ['Perguntas essenciais sem resposta', L.essenciais],
+      ['Respostas vagas para detalhar', L.vagas],
+      ['Empresas do grupo', L.empresas],
+      ['Departamentos incompletos', L.departamentos],
+      ['Informações divergentes', L.divergencias],
+      ['Marcadas para confirmar', L.marcadas]
+    ].filter((g) => g[1].length);
+    const total = grupos.reduce((s2, g) => s2 + g[1].length, 0);
+    let h = '<section class="painel conferencia nao-imprimir"><h2 class="painel-tit">Conferência antes de sair da visita</h2>';
+    if (!total) return h + '<p class="conf-ok">Nenhuma lacuna encontrada.</p></section>';
+    h += '<p class="conf-resumo">' + total + (total === 1 ? ' item ainda precisa' : ' itens ainda precisam') + ' de resposta ou confirmação.</p>';
+    h += grupos.map(([tit, itens]) => '<details class="conf-grupo"' + (tit.startsWith('Marcadas') ? '' : ' open') + '><summary>' + tit + ' <span class="painel-cont">' + itens.length + '</span></summary><ul>' +
+      itens.map((x) => '<li><span>' + esc(x.texto) + '</span>' + (x.etapa ? '<button type="button" class="btn-link" data-acao="ir-pergunta" data-etapa="' + x.etapa + '" data-alvo="' + x.alvo + '">Ir</button>' : '') + '</li>').join('') +
+      '</ul></details>').join('');
+    return h + '</section>';
+  }
+
   function renderCadastro() {
     const c = estado.cadastro;
     const inp = (k, rot, tipo, obrig) => '<div class="campo"><label for="cad_' + k + '">' + rot + (obrig ? ' <span class="obrig">obrigatório</span>' : '') + '</label>' +
@@ -373,13 +466,18 @@
     const sel = '<div class="campo"><label for="cad_porte">Porte <span class="obrig">obrigatório</span></label><select id="cad_porte" data-path="cadastro.porte">' +
       portes.map((p) => '<option value="' + esc(p) + '"' + (c.porte === p ? ' selected' : '') + '>' + (p || 'Selecione') + '</option>').join('') +
       (c.porte && !portes.includes(c.porte) ? '<option selected value="' + esc(c.porte) + '">' + esc(c.porte) + '</option>' : '') + '</select></div>';
-    return '<section class="painel"><h2 class="painel-tit">Empresa</h2><div class="grade">' +
+    const modulos = '<section class="painel"><h2 class="painel-tit">Módulos de perguntas</h2>' +
+      '<p class="texto-sec">Ative conforme o cliente. Cada módulo acrescenta perguntas nas etapas e entra na conferência de lacunas.</p><div class="modulos">' +
+      R.MODULOS.map((m) => '<label class="modulo"><input type="checkbox" data-path="modulos.' + m.id + '"' + (estado.modulos[m.id] ? ' checked' : '') + '><span><strong>' + esc(m.titulo) + '</strong><br><span class="texto-sec">' + esc(m.desc) + '</span></span></label>').join('') +
+      '</div></section>';
+    return modulos + '<section class="painel"><h2 class="painel-tit">Empresa</h2><div class="grade">' +
       inp('empresa', 'Nome ou razão social', 'text', true) + inp('fantasia', 'Nome fantasia') + inp('cnpj', 'CNPJ') +
       inp('ramo', 'Ramo de atuação', 'text', true) + sel + inp('cidade', 'Cidade / UF') + inp('site', 'Site') +
       inp('dataVisita', 'Data da visita', 'date') + inp('consultor', 'Responsável pelo levantamento') +
       '</div></section>' +
       renderPessoas('responsaveis', 'Responsáveis na empresa', [['nome', 'Nome'], ['cargo', 'Cargo'], ['contato', 'Telefone ou e-mail']]) +
       renderPessoas('entrevistados', 'Entrevistados', [['nome', 'Nome'], ['cargo', 'Cargo ou função'], ['departamento', 'Departamento'], ['contato', 'Telefone ou e-mail']]) +
+      (estado.modulos.grupo ? renderGrupoEmpresas() : '') +
       renderAnexos('cadastro');
   }
 
@@ -548,6 +646,7 @@
       item.querySelector('.rot-status').textContent = STATUS[valor];
     }
     if (el.dataset.path === 'cadastro.empresa') atualizarTopo();
+    if (el.dataset.path.startsWith('modulos.')) { agendarSalvar(); const y = window.scrollY; render(); window.scrollTo(0, y); return; }
     if (el.dataset.path.startsWith('validacao.')) {
       const chave = el.dataset.path.split('.')[1];
       if (el.classList.contains('validacao-status')) {
@@ -686,6 +785,31 @@
       window.scrollTo(0, y);
     },
     voz: (b) => acaoVoz(b),
+    'add-empresa': () => {
+      const n = estado.cadastro.grupo.length + 1;
+      const novo = { id: R.uid(), nome: 'Empresa ' + String(n).padStart(2, '0'), papel: '', cnpj: '', areas: '', obs: '', confirmar: false };
+      estado.cadastro.grupo.push(novo);
+      marcarRespostaAlterada('cadastro');
+      agendarSalvar(); render();
+      focar('[data-path="cadastro.grupo.#' + novo.id + '.nome"]');
+    },
+    'add-deps-padrao': () => {
+      const existentes = estado.departamentos.map((d) => R.analise.norm((d.nome || '').trim()));
+      let n = 0;
+      R.DEPARTAMENTOS_PADRAO.forEach(([nome]) => {
+        if (existentes.includes(R.analise.norm(nome))) return;
+        estado.departamentos.push({ id: R.uid(), nome });
+        n++;
+      });
+      marcarRespostaAlterada('departamentos');
+      agendarSalvar(); render();
+      mostrarStatus(n ? n + (n === 1 ? ' departamento adicionado.' : ' departamentos adicionados.') : 'Os departamentos sugeridos já estão na lista.');
+    },
+    'ir-pergunta': (b) => {
+      if (b.dataset.etapa !== estado.etapaAtual) ir(b.dataset.etapa);
+      const el = b.dataset.alvo && document.getElementById(b.dataset.alvo);
+      if (el) { el.scrollIntoView({ block: 'center' }); if (el.focus) el.focus({ preventScroll: true }); }
+    },
     exemplo: (b) => {
       const el = document.getElementById(b.dataset.alvo);
       if (!el) return;

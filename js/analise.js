@@ -63,14 +63,15 @@
   /* ---------- Catálogo de departamentos (nome explícito e tema) ---------- */
   const CATALOGO = [
     { nome: 'Financeiro', nomeRe: /financeir|financas|tesouraria|contas a (pagar|receber)/, temaRe: /pagament|\bpix\b|fluxo de caixa|cobranc|faturament|boleto|\bbancos?\b/ },
-    { nome: 'RH', nomeRe: /\brh\b|recursos humanos|departamento pessoal|gestao de pessoas/, temaRe: /contrat\w* (de )?(funcionari|colaborador|pessoa)|admiss|demiss|\bclt\b|avulso|folha de pagamento|ponto eletronico/ },
+    { nome: 'RH', nomeRe: /\brh\b|recursos humanos|departamento pessoal|gestao de pessoas/, temaRe: /contrat\w* (de )?(funcionari|colaborador|pessoa)|admiss|demiss|\bclt\b|avulso|diarist|folha de pagamento|ponto eletronico|vinculo/ },
     { nome: 'Compras', nomeRe: /\bcompras?\b|suprimentos/, temaRe: /fornecedor|cotac|pedido de compra|aquisic/ },
     { nome: 'Administrativo', nomeRe: /administrativ|administrac|admintrac|\badmin\b|\badm\b/, temaRe: /arquivo de documentos|protocolo/ },
     { nome: 'Comercial', nomeRe: /comercial|\bvendas\b/, temaRe: /vendedor|proposta comercial|carteira de clientes/ },
     { nome: 'Operacional', nomeRe: /\boperacional\b|setor de operacoes|area de operacoes|\bproducao\b/, temaRe: /ordem de servico|execucao do servico|equipe de campo|canteiro/ },
-    { nome: 'Licitações', nomeRe: /licitac/, temaRe: /edital|pregao|empenho|contrato publico/ },
+    { nome: 'Licitações', nomeRe: /licitac/, temaRe: /edital|editais|pregao|certame|habilitac|certid/ },
+    { nome: 'Contratos', nomeRe: /\bcontratos?\b(?! de trabalho| clt)|gestao de contratos/, temaRe: /medic|empenho|aditivo|vigencia|reajuste/ },
     { nome: 'Estoque e logística', nomeRe: /estoque|almoxarifado|logistica|expedicao/, temaRe: /inventario|frete|entrega de material/ },
-    { nome: 'Fiscal e contábil', nomeRe: /\bfiscal\b|contabil|contabilidade/, temaRe: /nota fiscal|nf-?e|imposto|tribut/ },
+    { nome: 'Contabilidade e prestação de contas', nomeRe: /contabil|contabilidade|prestacao de contas|\bfiscal\b/, temaRe: /nota fiscal|nf-?e|imposto|tribut|prestar contas|tribunal de contas|regime tributario/ },
     { nome: 'TI', nomeRe: /\bti\b|tecnologia da informacao|informatica/, temaRe: /servidor|suporte tecnico/ }
   ];
 
@@ -180,6 +181,78 @@
     }
   ];
 
+  /* Padrões para grupos que atuam com contratos públicos e equipes com vínculos variados. */
+  PADROES.push(
+    {
+      id: 'licitacoes', dept: 'Licitações', titulo: 'Gestão de licitações sem controle estruturado',
+      detectar: (n) => achar(/licitac|edital|editais|pregao|certame|habilitac|certid/, n),
+      causa: 'Editais, documentos de habilitação, propostas e prazos são acompanhados de forma manual ou dispersa.',
+      impacto: 'Risco de perder prazos e licitações por certidão vencida ou documento faltante; pouca visão de quantas disputas há e de quantas são vencidas.',
+      objetivo: 'Acompanhar cada licitação do edital ao resultado, com prazos, documentos e propostas em um só lugar.',
+      solucao: 'Cadastro de licitações com etapas (edital, decisão de participar, proposta, sessão, resultado, recurso), calendário de prazos, controle de documentos e certidões com vencimento por empresa e histórico de resultados.',
+      tobe: [['Licitações', 'Registra o edital e a data da sessão'], ['Administradora', 'Decide participar e por qual empresa'], ['Sistema', 'Confere documentos e certidões válidos da empresa'], ['Licitações', 'Monta e registra a proposta de preço'], ['Licitações', 'Registra resultado e recursos'], ['Sistema', 'Licitação vencida gera o contrato']],
+      funcionalidades: [['Cadastro e acompanhamento de editais por etapa', 'especifica'], ['Calendário de prazos dos certames com alertas', 'padrao'], ['Controle de documentos e certidões por empresa, com vencimento', 'especifica'], ['Registro de propostas de preço', 'especifica'], ['Resultados, recursos e taxa de vitória', 'padrao']],
+      entidades: [['Licitacao', ['orgao', 'numeroEdital', 'dataSessao', 'situacao']], ['Proposta', ['valor', 'situacao']], ['DocumentoHabilitacao', ['tipo', 'validade']]],
+      relacoes: [['Licitacao', '1', '*', 'Proposta'], ['Licitacao', '*', '*', 'DocumentoHabilitacao']],
+      integracoes: [],
+      atores: [['Licitações', 'cadastra editais, documentos e propostas'], ['Administradora', 'decide a participação e aprova o preço']],
+      criterios: () => ['Toda licitação em andamento aparece com a próxima data e a empresa participante.', 'O sistema avisa antes do vencimento de cada certidão.', 'Uma licitação vencida vira contrato sem redigitar os dados.'],
+      riscos: ['Busca automática de editais em portais depende de cada portal; pode exigir cadastro manual.'],
+      perguntas: ['Quem aprova a participação e o preço final?', 'Quais certidões vencem com mais frequência?']
+    },
+    {
+      id: 'contratos_publicos', dept: 'Contratos', titulo: 'Contratos públicos sem gestão centralizada',
+      detectar: (n) => achar(/contrato|medic|empenho|aditivo/, n) && achar(/prefeitura|orgao public|publico|municipi|empenho|medic|fiscal do contrato/, n),
+      causa: 'Vigências, aditivos, medições, notas e recebimentos de cada contrato são controlados separadamente.',
+      impacto: 'Risco de contrato vencer sem renovação, de medição ou nota atrasada e de não saber quanto há a receber de cada prefeitura ou o resultado de cada contrato.',
+      objetivo: 'Ter cada contrato com vigência, medições, faturamento, recebimentos e resultado, por empresa e por área.',
+      solucao: 'Cadastro de contratos por empresa, área e órgão contratante, com vigência e aditivos, medições e faturamento, acompanhamento de empenhos e recebimentos, e resultado por contrato (receita menos custos de pessoal e materiais).',
+      tobe: [['Contratos', 'Registra o contrato e seus aditivos'], ['Operacional', 'Registra a execução do período'], ['Contratos', 'Gera a medição e a nota do período'], ['Financeiro', 'Acompanha empenho e recebimento'], ['Sistema', 'Calcula o resultado do contrato'], ['Sistema', 'Avisa vencimentos e atrasos']],
+      funcionalidades: [['Cadastro de contratos por empresa, área e órgão', 'padrao'], ['Vigência, aditivos e reajustes com alertas', 'padrao'], ['Medições e faturamento por contrato', 'especifica'], ['Empenhos, notas e recebimentos por contrato', 'especifica'], ['Resultado por contrato (receitas e custos)', 'especifica']],
+      entidades: [['Contrato', ['orgao', 'area', 'vigencia', 'valor']], ['Aditivo', ['tipo', 'data', 'valor']], ['Medicao', ['periodo', 'valor', 'situacao']], ['Recebimento', ['data', 'valor', 'empenho']]],
+      relacoes: [['Contrato', '1', '*', 'Aditivo'], ['Contrato', '1', '*', 'Medicao'], ['Medicao', '1', '*', 'Recebimento']],
+      integracoes: [],
+      atores: [['Contratos', 'cadastra contratos, aditivos e medições'], ['Financeiro', 'acompanha empenhos e recebimentos'], ['Operacional', 'informa a execução']],
+      criterios: (ctx) => ['Cada contrato mostra vigência, valor a receber e resultado do período.', 'O sistema avisa com antecedência o vencimento de contratos e aditivos.', 'É possível ver os contratos por empresa, por área e por prefeitura.'],
+      riscos: ['Calcular o resultado por contrato exige alocar pessoal e materiais a cada contrato.'],
+      perguntas: ['Quais documentos cada prefeitura exige para pagar?', 'Como o custo de pessoal é associado a cada contrato?']
+    },
+    {
+      id: 'diaristas', dept: 'RH', titulo: 'Pessoal com vínculos variados e diárias',
+      detectar: (n) => achar(/diarias?\b|diarist|avulso|sem vinculo|informal|por dia trabalhado/, n),
+      causa: 'Parte da equipe trabalha por diária ou sem vínculo formal, com presença e valores controlados manualmente.',
+      impacto: 'Risco de pagar dias não trabalhados ou deixar de pagar, dificuldade de comprovar pagamentos na prestação de contas e de saber o custo de pessoal por contrato.',
+      objetivo: 'Registrar cada trabalhador pelo tipo de vínculo, a presença por local e contrato, e calcular e comprovar os pagamentos.',
+      solucao: 'Cadastro de trabalhadores por vínculo (CLT, diarista, avulso), alocação por contrato e local, registro de presença pelo encarregado, cálculo das diárias e envio para pagamento em lote, com comprovantes para a prestação de contas.',
+      tobe: [['RH', 'Cadastra o trabalhador e o vínculo'], ['Operacional', 'Aloca no contrato e no local'], ['Encarregado', 'Registra a presença do dia'], ['Sistema', 'Calcula as diárias do período'], ['Financeiro', 'Paga em lote e guarda os comprovantes']],
+      funcionalidades: [['Cadastro de trabalhadores por tipo de vínculo', 'padrao'], ['Alocação por contrato e local de trabalho', 'especifica'], ['Registro de presença pelo encarregado (inclusive pelo celular)', 'especifica'], ['Cálculo de diárias por função e período', 'especifica'], ['Custo de pessoal por contrato e por empresa', 'especifica']],
+      entidades: [['Trabalhador', ['nome', 'documento', 'tipoVinculo', 'chavePix']], ['Alocacao', ['contrato', 'local', 'inicio', 'fim']], ['Presenca', ['data', 'situacao']], ['Diaria', ['periodo', 'dias', 'valor']]],
+      relacoes: [['Trabalhador', '1', '*', 'Alocacao'], ['Alocacao', '1', '*', 'Presenca'], ['Trabalhador', '1', '*', 'Diaria']],
+      integracoes: [],
+      atores: [['RH', 'cadastra trabalhadores e vínculos'], ['Encarregado', 'registra presença do seu local'], ['Financeiro', 'paga diárias em lote']],
+      criterios: () => ['As diárias da semana são calculadas a partir das presenças registradas, sem planilha.', 'Cada pagamento de diária fica ligado ao trabalhador, ao contrato e ao comprovante.', 'O custo de pessoal aparece por contrato e por empresa.'],
+      riscos: ['Trabalho por diária recorrente pode ter implicações trabalhistas; recomenda-se orientação jurídica e contábil.', 'Registro de presença em campo depende de celular e de internet ou de uso sem conexão.'],
+      perguntas: ['Como o valor da diária é definido e quem aprova?', 'Quem registra a presença em cada local?']
+    },
+    {
+      id: 'prestacao_contas', dept: 'Contabilidade e prestação de contas', titulo: 'Prestação de contas trabalhosa',
+      detectar: (n) => achar(/prest\w* (de )?contas|tribunal de contas|prestar contas/, n),
+      causa: 'Os documentos da prestação de contas estão espalhados entre áreas, empresas e contratos.',
+      impacto: 'Prestação demorada, risco de documento faltante e dificuldade de separar o que é de cada empresa e de cada contrato.',
+      objetivo: 'Montar a prestação de contas por empresa, por contrato e do grupo a partir do que já está registrado.',
+      solucao: 'Dossiê de prestação de contas por contrato e por empresa, com checklist dos documentos exigidos, anexos ligados a cada lançamento e relatórios consolidados do grupo.',
+      tobe: [['Áreas', 'Anexam os documentos ao registrar cada lançamento'], ['Sistema', 'Monta o dossiê por contrato e por empresa'], ['Contabilidade', 'Confere o checklist e completa o que falta'], ['Administradora', 'Aprova e envia a prestação']],
+      funcionalidades: [['Dossiê de prestação de contas por contrato e por empresa', 'especifica'], ['Checklist de documentos exigidos', 'padrao'], ['Anexos ligados a cada lançamento', 'padrao'], ['Relatórios por empresa, contrato e grupo', 'padrao']],
+      entidades: [['PrestacaoContas', ['periodo', 'destinatario', 'situacao']], ['Documento', ['tipo', 'arquivo', 'origem']]],
+      relacoes: [['PrestacaoContas', '1', '*', 'Documento']],
+      integracoes: [],
+      atores: [['Contabilidade', 'confere e monta a prestação'], ['Administradora', 'aprova e envia']],
+      criterios: () => ['A prestação de um contrato reúne automaticamente medições, notas e comprovantes de pagamento do período.', 'É possível emitir a prestação de cada empresa separada e do grupo consolidado.'],
+      riscos: ['Formatos exigidos pelo tribunal de contas ou por cada prefeitura precisam ser confirmados.'],
+      perguntas: ['Para quem e com que frequência a prestação é enviada?', 'Existe modelo obrigatório de prestação?']
+    }
+  );
+
   const QUANT = /(\d[\d.]*)\s+(pix|pagamentos?|pessoas|funcionarios|colaboradores|transferencias)\b(?:[^.\n]{0,30}?\b(?:por|na|ao|toda|cada)\s+(semana|mes|dia|quinzena))?/g;
 
   function analisar(E) {
@@ -191,7 +264,7 @@
 
     /* ---------- 1. Respostas classificadas ---------- */
     const respostas = [];
-    R.ETAPAS.filter((e) => e.perguntas).forEach((e) => e.perguntas.forEach((p) => {
+    R.ETAPAS.filter((e) => e.perguntas).forEach((e) => e.perguntas.filter((p) => R.perguntaVisivel(p, E)).forEach((p) => {
       const texto = resp(p.id);
       respostas.push({ id: p.id, etapa: e.titulo, etapaId: e.id, pergunta: p.q, texto, fonte: fonteQ(p.id), pendente: flag(p.id), classe: classificar(texto, p.descritiva) });
     }));
@@ -357,7 +430,8 @@
         let alvos = [];
         if (ev.depNome) { const r = depsDoTexto(ev.depNome); alvos = r.lista.length ? [r.lista[0]] : []; }
         if (!alvos.length) alvos = depsDoTexto(ev.texto).lista;
-        if (pad.dept && (!alvos.length || !alvos.some((d) => d.cat.nome === pad.dept))) {
+        if (pad.dept) {
+          // Padrão com departamento próprio vai só para ele, quando o departamento existe.
           const d = deps.find((x) => x.cat.nome === pad.dept);
           if (d) alvos = [d];
         }
@@ -366,6 +440,8 @@
       });
     });
     if (rPlan) depsDoTexto(rPlan.texto).lista.forEach((d) => anexarPadrao(d, PADROES.find((p) => p.id === 'planilha'), { texto: R.PERGUNTAS.sis_planilhas.curto + ': ' + rPlan.texto, fonte: rPlan.fonte, atual: true }));
+    /* "Pessoal com vínculos variados" já cobre o cadastro e a contratação. */
+    deps.forEach((d) => { if (d.padroes.diaristas && d.padroes.contratacao) { d.padroes.diaristas.evidencias.push(...d.padroes.contratacao.evidencias); delete d.padroes.contratacao; } });
     /* Padrão geral já coberto por algum departamento não vira solução transversal repetida. */
     Object.keys(padroesGerais).forEach((id) => { if (deps.some((d) => d.padroes[id])) delete padroesGerais[id]; });
 
@@ -382,8 +458,12 @@
     const numerosDistintos = [...new Set(volPag.map((v) => v.n))];
     const divergencia = numerosDistintos.length > 1 ? volPag : null;
 
-    let multiempresa = null;
-    respostas.filter((r) => r.classe === 'informativa').some((r) => {
+    const grupo = (c.grupo || []).filter((x) => t(x.nome));
+    const admin = grupo.find((x) => /^administradora/.test(x.papel || '')) || null;
+    let multiempresa = grupo.length >= 2
+      ? { n: grupo.length, texto: grupo.length + ' empresas cadastradas no grupo' + (admin ? ', com ' + t(admin.nome) + ' como administradora' : ''), fonte: 'Cadastro › Empresas do grupo', doCadastro: true }
+      : null;
+    if (!multiempresa) respostas.filter((r) => r.classe === 'informativa').some((r) => {
       const m = /(\d+)\s+empresas/.exec(norm(r.texto));
       if (m && Number(m[1]) >= 2) { multiempresa = { n: Number(m[1]), texto: r.texto, fonte: r.fonte }; return true; }
       return false;
@@ -466,7 +546,7 @@
 
     return {
       respostas, porId, deps, geral, interdep, processos, padroesGerais, PADROES,
-      volumes: volPag, divergencia, multiempresa, aprovador, prazoDias, semSistema, sistemasAtuais,
+      volumes: volPag, divergencia, multiempresa, grupo, admin, aprovador, prazoDias, semSistema, sistemasAtuais,
       reqGeral, regrasGerais, prioridades, pendencias,
       classe: (id) => (porId[id] ? porId[id].classe : 'vazia'),
       resposta: (id) => porId[id] || null

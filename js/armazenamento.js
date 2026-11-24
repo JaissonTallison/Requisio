@@ -31,8 +31,9 @@
       etapaAtual: 'cadastro',
       cadastro: {
         empresa: '', fantasia: '', cnpj: '', ramo: '', porte: '', cidade: '', site: '',
-        dataVisita: '', consultor: '', responsaveis: [], entrevistados: []
+        dataVisita: '', consultor: '', responsaveis: [], entrevistados: [], grupo: []
       },
+      modulos: {},
       respostas: {},
       extras: {},
       departamentos: [],
@@ -121,7 +122,7 @@
 
     const c = obj(o.cadastro);
     Object.keys(b.cadastro).forEach((k) => {
-      b.cadastro[k] = k === 'responsaveis' || k === 'entrevistados' ? lista(c[k]) : str(c[k]);
+      b.cadastro[k] = k === 'responsaveis' || k === 'entrevistados' || k === 'grupo' ? lista(c[k]) : str(c[k]);
     });
 
     const r = obj(o.respostas);
@@ -137,6 +138,8 @@
     b.processos = lista(o.processos);
     b.diagnostico = normalizarDiagnostico(o.diagnostico);
     b.anexos = lista(o.anexos);
+    const mods = obj(o.modulos);
+    Object.keys(mods).forEach((k) => { if (idValido(k)) b.modulos[k] = !!mods[k]; });
     const val = obj(o.validacao);
     Object.keys(val).forEach((k) => {
       if (!idValido(k)) return;
